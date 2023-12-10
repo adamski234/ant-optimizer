@@ -99,6 +99,16 @@ pub struct EdgeData {
 }
 
 #[derive(Debug, Clone)]
+pub struct ConfigData {
+	pub ant_count: usize,
+	pub random_choice_chance: f64,
+	pub pheromone_weight: f64,
+	pub heuristic_weight: f64,
+	pub iteration_count: u32,
+	pub pheromone_evaporation_coefficient: f64,
+}
+
+#[derive(Debug, Clone)]
 pub struct WorldState {
 	graph: Vec<GraphNode>,
 	pub ants: Vec<Ant>,
@@ -110,20 +120,20 @@ pub struct WorldState {
 }
 
 impl WorldState {
-	pub fn new(input_nodes: Vec<GraphNode>, ant_count: usize, random_choice_chance: f64, pheromone_weight: f64, heuristic_weight: f64, iteration_count: u32, pheromone_evaporation_coefficient: f64) -> Self {
+	pub fn new(input_nodes: Vec<GraphNode>, config: ConfigData) -> Self {
 		let attraction_count = input_nodes.len();
 		let mut result = WorldState {
 			graph: input_nodes,
-			ants: Vec::with_capacity(ant_count),
+			ants: Vec::with_capacity(config.ant_count),
 			edges: HashMap::with_capacity(attraction_count * (attraction_count - 1) / 2), // holds exactly as many edges as required
-			iteration_count,
-			pheromone_evaporation_coefficient,
+			iteration_count: config.iteration_count,
+			pheromone_evaporation_coefficient: config.pheromone_evaporation_coefficient,
 			best_solution: Vec::new(),
 			best_solution_length: f64::MAX,
 		};
 
-		for _ in 0..ant_count {
-			result.ants.push(Ant::new(heuristic_weight, pheromone_weight, random_choice_chance));
+		for _ in 0..config.ant_count {
+			result.ants.push(Ant::new(config.heuristic_weight, config.pheromone_weight, config.random_choice_chance));
 		}
 
 		result.init_edges();

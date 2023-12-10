@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 struct Config {
 	#[arg(short, long)]
 	batch: bool, // for processing directories
@@ -24,6 +24,19 @@ struct Config {
 	#[arg(long, name = "try-count")]
 	try_count: Option<u32>,
 
+}
+
+impl From<&Config> for ant_colony::ConfigData {
+	fn from(value: &Config) -> Self {
+		return Self {
+			ant_count: value.ant_count,
+			heuristic_weight: value.heuristic_weight,
+			iteration_count: value.iterations,
+			pheromone_evaporation_coefficient: value.evaporation_coeff,
+			pheromone_weight: value.pheromone_weight,
+			random_choice_chance: value.random_choice_chance,
+		};
+	}
 }
 
 struct BatchRunData {
@@ -76,12 +89,13 @@ fn main() {
 	if config.batch {
 		//
 	} else {
+		let world_config = ant_colony::ConfigData::from(&config);
 		let mut reader = csv::ReaderBuilder::new().has_headers(false).delimiter(b' ').trim(csv::Trim::All).from_path(config.path).unwrap();
 		let mut nodes = Vec::<ant_colony::GraphNode>::new();
 		for result in reader.deserialize() {
 			nodes.push(result.unwrap());
 		}
-		let mut solver = ant_colony::WorldState::new(nodes, config.ant_count, config.random_choice_chance, config.pheromone_weight, config.heuristic_weight, config.iterations, config.evaporation_coeff);
+		let mut solver = ant_colony::WorldState::new(nodes, world_config);
 		if let Some(tries) = config.try_count {
 			let tries_per_thread = (tries as usize).div_ceil(num_cpus::get());
 			let mut threads = Vec::with_capacity(num_cpus::get());
