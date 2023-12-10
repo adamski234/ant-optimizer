@@ -61,7 +61,7 @@ impl Ant {
 				// zero distance means we jump straight there and ignore every other possibility
 				// removes a node at no cost and it is always the most optimal solution
 				// see 67 and 68 in A-n80-k10.txt
-				self.current_path.push(node.clone());
+				self.current_path.push(self.node_at.clone());
 				self.node_at = node.clone();
 				return Ok(());
 			} else {
@@ -127,8 +127,6 @@ impl WorldState {
 		}
 
 		result.init_edges();
-
-		println!("cap: {}, len: {}", result.edges.capacity(), result.edges.len());
 
 		return result;
 	}
@@ -217,6 +215,6 @@ impl WorldState {
 		self.init_ants();
 		self.init_edges();
 		self.best_solution = Vec::new();
-		self.best_solution_length = 0.0;
+		self.best_solution_length = f64::MAX;
 	}
 }

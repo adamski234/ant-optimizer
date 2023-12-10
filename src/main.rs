@@ -91,7 +91,6 @@ fn main() {
 					let mut run_stats = BatchRunData::new();
 					for _ in 0..tries_per_thread {
 						thread_solver.do_all_iterations();
-						println!("Thread {:#?} found solution {}", std::thread::current().id(), thread_solver.best_solution_length);
 						run_stats.add_run(thread_solver.best_solution_length);
 						thread_solver.reset();
 					}
