@@ -45,7 +45,6 @@ impl Ant {
 		let mut possible_paths = Vec::new();
 		for node in &mut world.graph {
 			if node != &self.node_at && !self.current_path.contains(node) {
-				//println!("possible path: {} at ({}, {}) to {} at ({}, {})", self.node_at.attraction_number, self.node_at.x, self.node_at.y, node.attraction_number, node.x, node.y);
 				possible_paths.push(node.clone());
 			}
 		}
@@ -59,9 +58,12 @@ impl Ant {
 		for node in &mut possible_paths {
 			let data = world.get_edge((self.node_at.clone(), node.clone()));
 			if data.length == 0.0 {
-				//println!("zero distance from {} at ({}, {}) to {} at ({}, {})", self.node_at.attraction_number, self.node_at.x, self.node_at.y, node.attraction_number, node.x, node.y);
+				// zero distance means we jump straight there and ignore every other possibility
+				// removes a node at no cost and it is always the most optimal solution
 				// see 67 and 68 in A-n80-k10.txt
-				costs.push(data.pheromone_strength.powf(self.pheromone_weight));
+				self.current_path.push(node.clone());
+				self.node_at = node.clone();
+				return Ok(());
 			} else {
 				costs.push(data.pheromone_strength.powf(self.pheromone_weight) * data.length.recip().powf(self.heuristic_weight));
 			}
@@ -158,7 +160,6 @@ impl WorldState {
 		if pair.0.attraction_number > pair.1.attraction_number {
 			return self.edges.get_mut(&(pair.1, pair.0)).unwrap();
 		} else {
-			//println!("{} at ({}, {}), {} at ({}, {})", pair.0.attraction_number, pair.0.x, pair.0.y, pair.1.attraction_number, pair.1.x, pair.1.y);
 			return self.edges.get_mut(&pair).unwrap();
 		}
 	}
@@ -204,7 +205,6 @@ impl WorldState {
 		self.move_ants();
 		self.update_pheromones();
 		self.update_best_solution();
-		//println!("{:#?}", self.ants);
 	}
 
 	pub fn do_all_iterations(&mut self) {
