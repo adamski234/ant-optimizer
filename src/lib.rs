@@ -58,7 +58,13 @@ impl Ant {
 		let mut costs = Vec::with_capacity(possible_paths.len());
 		for node in &mut possible_paths {
 			let data = world.get_edge((self.node_at.clone(), node.clone()));
-			costs.push(data.pheromone_strength.powf(self.pheromone_weight) * data.length.recip().powf(self.heuristic_weight));
+			if data.length == 0.0 {
+				//println!("zero distance from {} at ({}, {}) to {} at ({}, {})", self.node_at.attraction_number, self.node_at.x, self.node_at.y, node.attraction_number, node.x, node.y);
+				// see 67 and 68 in A-n80-k10.txt
+				costs.push(data.pheromone_strength.powf(self.pheromone_weight));
+			} else {
+				costs.push(data.pheromone_strength.powf(self.pheromone_weight) * data.length.recip().powf(self.heuristic_weight));
+			}
 		}
 
 		// and pick the next destination
