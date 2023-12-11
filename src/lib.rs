@@ -12,6 +12,10 @@ impl GraphNode {
 	pub fn distance_to(&self, other: &GraphNode) -> f64 {
 		return (((self.x - other.x).pow(2) + (self.y - other.y).pow(2)) as f64).sqrt();
 	}
+
+	pub fn to_graphviz(&self) -> String {
+		return format!("{} [pos = \"{}, {}!\"]", self.attraction_number, self.x, self.y);
+	}
 }
 
 enum AntError {
@@ -226,5 +230,38 @@ impl WorldState {
 		self.init_edges();
 		self.best_solution = Vec::new();
 		self.best_solution_length = f64::MAX;
+	}
+
+	pub fn nodes_to_graphviz(&self) -> String {
+		let mut result = String::new();
+		for node in &self.graph {
+			result.push_str(&node.to_graphviz());
+			result.push('\n');
+		}
+		return result;
+	}
+
+	pub fn solution_edges_to_graphviz(&self) -> String {
+		let mut result = String::new();
+		for pair in self.best_solution.windows(2) {
+			result.push_str(&format!("{} -> {}\n", pair[0].attraction_number, pair[1].attraction_number));
+		}
+		return result;
+	}
+
+	pub fn solution_to_graphviz(&self) -> String {
+		return format!("digraph D {{\n\
+			layout = \"neato\"\n\
+			labelloc = \"t\"\n\
+			label = \"Solution length is {}\"\n\
+			{}\n\n\
+			{}\
+			}}", self.best_solution_length, self.nodes_to_graphviz(), self.solution_edges_to_graphviz()
+		);
+	}
+
+	pub fn current_ants_to_graphviz(&self) -> String {
+		// create a graph with edges colored according to their pheromone strength
+		todo!();
 	}
 }

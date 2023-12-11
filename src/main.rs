@@ -122,7 +122,8 @@ fn main() {
 			println!("Finished {} runs. Longest found route is {}, shortest found route is {}. The average length is {}", result.run_count, result.max_result, result.min_result, result.average);
 		} else {
 			solver.do_all_iterations();
-			println!("Found solution with length {}", solver.best_solution_length);
+			eprintln!("Found solution with length {}", solver.best_solution_length);
+			println!("{}", solver.solution_to_graphviz());
 		}
 	}
 }
