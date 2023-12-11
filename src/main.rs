@@ -124,9 +124,28 @@ fn main() {
 			}).unwrap().unwrap();
 			println!("Finished {} runs. Longest found route is {}, shortest found route is {}. The average length is {}", result.run_count, result.max_result, result.min_result, result.average);
 		} else {
-			solver.do_all_iterations();
+			if config.record {
+				let low_color = colorgrad::Color::from_linear_rgba(0.0, 0.0, 1.0, 1.0);
+				let high_color = colorgrad::Color::from_linear_rgba(1.0, 0.0, 0.0, 0.0);
+				let frames = solver.do_all_iterations_with_graphviz_recording(low_color, high_color);
+				let nodes = solver.nodes_to_graphviz();
+				for (index, item) in frames.iter().enumerate() {
+					let output = format!("graph frame{} {{\n\
+						layout = \"neato\"\n\
+						labelloc = \"t\"\n\
+						label = \"Frame {} of {}. Found solution is {}.\"\n\
+						{}\n\n\
+						{}\n\
+						}}
+						", index, index, frames.len(), solver.best_solution_length, nodes, item
+					);
+					std::fs::write(format!("./output/{}.dot", index), output).unwrap();
+				}
+			} else {
+				solver.do_all_iterations();
+			}
+			println!("{}", solver.solution_to_graphviz());
 			eprintln!("Found solution with length {}", solver.best_solution_length);
-			println!("{:#?}", solver.solution_to_graphviz());
 		}
 	}
 }

@@ -178,7 +178,7 @@ impl WorldState {
 			for second_node in self.graph[index + 1 ..].iter() {
 				let to_insert = EdgeData {
 					length: node.distance_to(second_node),
-					pheromone_strength: 1.0
+					pheromone_strength: 0.01
 				};
 				if node.attraction_number > second_node.attraction_number {
 					self.edges.insert((second_node.clone(), node.clone()), to_insert);
@@ -266,7 +266,7 @@ impl WorldState {
 			if single_result.max_pheromones > result.max_pheromones {
 				result.max_pheromones = single_result.max_pheromones;
 			}
-			if single_result.min_pheromones > result.min_pheromones {
+			if single_result.min_pheromones < result.min_pheromones {
 				result.min_pheromones = single_result.min_pheromones;
 			}
 		}
@@ -274,10 +274,9 @@ impl WorldState {
 	}
 
 	pub fn do_all_iterations_with_graphviz_recording(&mut self, low_color: colorgrad::Color, high_color: colorgrad::Color) -> Vec<String> {
-		// https://github.com/Ogeon/palette/blob/master/palette/examples/gradient.rs
 		let edge_recordings = self.do_all_iterations_with_edge_recording();
 		let color_source = colorgrad::CustomGradient::new()
-			.colors(&[low_color, high_color])
+			.colors(&[high_color, low_color])
 			.domain(&[edge_recordings.min_pheromones, edge_recordings.max_pheromones])
 			.build().unwrap();
 		let mut result = Vec::with_capacity(edge_recordings.edge_lists.len());
@@ -285,7 +284,7 @@ impl WorldState {
 		for iteration_edges in edge_recordings.edge_lists {
 			let mut iteration_edge_list = String::new();
 			for (pair, value) in iteration_edges {
-				iteration_edge_list.push_str(&format!("{} -> {} [color = \"{}\"]\n", pair.0.attraction_number, pair.1.attraction_number, color_source.at(value).to_hex_string()));
+				iteration_edge_list.push_str(&format!("{} -- {} [color = \"{}\"]\n", pair.0.attraction_number, pair.1.attraction_number, color_source.at(value).to_hex_string()));
 			}
 			result.push(iteration_edge_list);
 		}
@@ -341,7 +340,7 @@ impl WorldState {
 			if data.pheromone_strength > result.max_pheromones {
 				result.max_pheromones = data.pheromone_strength;
 			}
-			if data.pheromone_strength > result.min_pheromones {
+			if data.pheromone_strength < result.min_pheromones {
 				result.min_pheromones = data.pheromone_strength;
 			}
 		}
