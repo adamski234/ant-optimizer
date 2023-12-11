@@ -3,11 +3,17 @@
 use std::collections::HashMap;
 use rand::prelude::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
 pub struct GraphNode {
 	pub attraction_number: u32,
 	pub x: i32,
 	pub y: i32
+}
+
+impl std::hash::Hash for GraphNode {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		state.write_u32(self.attraction_number);
+	}
 }
 
 impl GraphNode {
@@ -30,12 +36,12 @@ pub struct Ant {
 	pub current_path: Vec<GraphNode>,
 	pub current_distance: f64,
 	pub random_choice_chance: f64, // less than 1
-	pub pheromone_weight: f64,
-	pub heuristic_weight: f64
+	pub pheromone_weight: i32,
+	pub heuristic_weight: i32
 }
 
 impl Ant {
-	fn new(heuristic_weight: f64, pheromone_weight: f64, random_choice_chance: f64) -> Self {
+	fn new(heuristic_weight: i32, pheromone_weight: i32, random_choice_chance: f64) -> Self {
 		return Self {
 			node_at: GraphNode { attraction_number: 0, x: 0, y: 0 }, // empty init, randomize later
 			current_path: Vec::new(),
@@ -48,7 +54,7 @@ impl Ant {
 	
 	fn move_ant(&mut self, world: &mut WorldState) -> Result<(), AntError> {
 		// Generate all possible ways to go
-		let mut possible_paths = Vec::new();
+		let mut possible_paths = Vec::with_capacity(world.edges.len());
 		for node in &mut world.graph {
 			if node != &self.node_at && !self.current_path.contains(node) {
 				possible_paths.push(node.clone());
@@ -71,7 +77,7 @@ impl Ant {
 				self.node_at = node.clone();
 				return Ok(());
 			} else {
-				costs.push(data.pheromone_strength.powf(self.pheromone_weight) * data.length.recip().powf(self.heuristic_weight));
+				costs.push(data.pheromone_strength.powi(self.pheromone_weight) * data.length.recip().powi(self.heuristic_weight));
 			}
 		}
 
@@ -108,8 +114,8 @@ pub struct EdgeData {
 pub struct ConfigData {
 	pub ant_count: usize,
 	pub random_choice_chance: f64,
-	pub pheromone_weight: f64,
-	pub heuristic_weight: f64,
+	pub pheromone_weight: i32,
+	pub heuristic_weight: i32,
 	pub iteration_count: u32,
 	pub pheromone_evaporation_coefficient: f64,
 }
@@ -132,7 +138,7 @@ pub struct MultipleIterationGraphviz {
 pub struct WorldState {
 	graph: Vec<GraphNode>,
 	pub ants: Vec<Ant>,
-	pub edges: HashMap<(GraphNode, GraphNode), EdgeData>, // populate at init, key is ordered tuple simulating an unordered pair, with first node having lower att number
+	pub edges: fnv::FnvHashMap<(GraphNode, GraphNode), EdgeData>, // populate at init, key is ordered tuple simulating an unordered pair, with first node having lower att number
 	iteration_count: u32,
 	pheromone_evaporation_coefficient: f64,
 	pub best_solution: Vec<GraphNode>,
@@ -145,7 +151,7 @@ impl WorldState {
 		let mut result = WorldState {
 			graph: input_nodes,
 			ants: Vec::with_capacity(config.ant_count),
-			edges: HashMap::with_capacity(attraction_count * (attraction_count - 1) / 2), // holds exactly as many edges as required
+			edges: fnv::FnvHashMap::with_capacity_and_hasher(attraction_count * (attraction_count - 1) / 2, Default::default()), // holds exactly as many edges as required
 			iteration_count: config.iteration_count,
 			pheromone_evaporation_coefficient: config.pheromone_evaporation_coefficient,
 			best_solution: Vec::new(),

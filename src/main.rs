@@ -20,9 +20,9 @@ struct Config {
 	#[arg(long, name = "random-chance")]
 	random_choice_chance: f64,
 	#[arg(long, name = "pheromone-weight")]
-	pheromone_weight: f64,
+	pheromone_weight: i32,
 	#[arg(long, name = "heuristic-weight")]
-	heuristic_weight: f64,
+	heuristic_weight: i32,
 	#[arg(long, name = "try-count", conflicts_with = "record")]
 	try_count: Option<u32>,
 	#[arg(short, long, conflicts_with = "try-count")]
@@ -126,7 +126,7 @@ fn main() {
 		} else {
 			solver.do_all_iterations();
 			eprintln!("Found solution with length {}", solver.best_solution_length);
-			println!("{:#?}", solver.edges);
+			println!("{:#?}", solver.solution_to_graphviz());
 		}
 	}
 }
