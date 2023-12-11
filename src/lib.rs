@@ -1,3 +1,5 @@
+#![allow(clippy::needless_return)]
+
 use std::collections::HashMap;
 use rand::prelude::*;
 
@@ -113,6 +115,20 @@ pub struct ConfigData {
 }
 
 #[derive(Debug, Clone)]
+pub struct SingleIterationEdgeList {
+	edges: HashMap<(GraphNode, GraphNode), f64>,
+	min_pheromones: f64,
+	max_pheromones: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct MultipleIterationGraphviz {
+	edge_lists: Vec<HashMap<(GraphNode, GraphNode), f64>>,
+	min_pheromones: f64,
+	max_pheromones: f64,
+}
+
+#[derive(Debug, Clone)]
 pub struct WorldState {
 	graph: Vec<GraphNode>,
 	pub ants: Vec<Ant>,
@@ -160,7 +176,7 @@ impl WorldState {
 			}
 		}
 	}
-
+	
 	pub fn init_ants(&mut self) {
 		for ant in &mut self.ants {
 			ant.clear();
@@ -225,6 +241,46 @@ impl WorldState {
 		}
 	}
 
+	pub fn do_all_iterations_with_edge_recording(&mut self) -> MultipleIterationGraphviz {
+		let mut result = MultipleIterationGraphviz {
+			edge_lists: Vec::with_capacity(self.iteration_count as usize),
+			max_pheromones: f64::MIN,
+			min_pheromones: f64::MAX,
+		};
+		for _ in 0..self.iteration_count {
+			self.do_iteration();
+			let single_result = self.edge_pheromones_to_list();
+			result.edge_lists.push(single_result.edges);
+			if single_result.max_pheromones > result.max_pheromones {
+				result.max_pheromones = single_result.max_pheromones;
+			}
+			if single_result.min_pheromones > result.min_pheromones {
+				result.min_pheromones = single_result.min_pheromones;
+			}
+		}
+		return result;
+	}
+
+	pub fn do_all_iterations_with_graphviz_recording(&mut self, low_color: colorgrad::Color, high_color: colorgrad::Color) -> Vec<String> {
+		// https://github.com/Ogeon/palette/blob/master/palette/examples/gradient.rs
+		let edge_recordings = self.do_all_iterations_with_edge_recording();
+		let color_source = colorgrad::CustomGradient::new()
+			.colors(&[low_color, high_color])
+			.domain(&[edge_recordings.min_pheromones, edge_recordings.max_pheromones])
+			.build().unwrap();
+		let mut result = Vec::with_capacity(edge_recordings.edge_lists.len());
+
+		for iteration_edges in edge_recordings.edge_lists {
+			let mut iteration_edge_list = String::new();
+			for (pair, value) in iteration_edges {
+				iteration_edge_list.push_str(&format!("{} -> {} [color = \"{}\"]\n", pair.0.attraction_number, pair.1.attraction_number, color_source.at(value).to_hex_string()));
+			}
+			result.push(iteration_edge_list);
+		}
+
+		return result;
+	}
+
 	pub fn reset(&mut self) {
 		self.init_ants();
 		self.init_edges();
@@ -260,8 +316,24 @@ impl WorldState {
 		);
 	}
 
-	pub fn current_ants_to_graphviz(&self) -> String {
+	pub fn edge_pheromones_to_list(&self) -> SingleIterationEdgeList {
 		// create a graph with edges colored according to their pheromone strength
-		todo!();
+		let mut result = SingleIterationEdgeList {
+			edges: HashMap::new(),
+			max_pheromones: f64::MIN,
+			min_pheromones: f64::MAX,
+		};
+
+		for (key, data) in &self.edges {
+			result.edges.insert(key.clone(), data.pheromone_strength);
+			if data.pheromone_strength > result.max_pheromones {
+				result.max_pheromones = data.pheromone_strength;
+			}
+			if data.pheromone_strength > result.min_pheromones {
+				result.min_pheromones = data.pheromone_strength;
+			}
+		}
+
+		return result;
 	}
 }

@@ -11,3 +11,4 @@ serde = { version = "1", features = ["derive"] }
 rand = "0.8"
 clap = { version = "4", features = ["derive"] }
 num_cpus = "1"
+colorgrad = "0.6"

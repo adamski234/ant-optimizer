@@ -1,3 +1,5 @@
+#![allow(clippy::needless_return)]
+
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -21,9 +23,10 @@ struct Config {
 	pheromone_weight: f64,
 	#[arg(long, name = "heuristic-weight")]
 	heuristic_weight: f64,
-	#[arg(long, name = "try-count")]
+	#[arg(long, name = "try-count", conflicts_with = "record")]
 	try_count: Option<u32>,
-
+	#[arg(short, long, conflicts_with = "try-count")]
+	record: bool,
 }
 
 impl From<&Config> for ant_colony::ConfigData {
@@ -123,7 +126,7 @@ fn main() {
 		} else {
 			solver.do_all_iterations();
 			eprintln!("Found solution with length {}", solver.best_solution_length);
-			println!("{}", solver.solution_to_graphviz());
+			println!("{:#?}", solver.edges);
 		}
 	}
 }
