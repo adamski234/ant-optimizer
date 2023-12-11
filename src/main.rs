@@ -131,9 +131,9 @@ fn main() {
 				let nodes = solver.nodes_to_graphviz();
 				for (index, item) in frames.iter().enumerate() {
 					let output = format!("graph frame{} {{\n\
-						layout = \"neato\"\n\
+						layout = \"fdp\"\n\
 						labelloc = \"t\"\n\
-						label = \"Frame {} of {}. Found solution is {}.\"\n\
+						label = \"Frame {} of {}. Found solution is {}.\\nPositions not to scale.\"\n\
 						{}\n\n\
 						{}\n\
 						}}
