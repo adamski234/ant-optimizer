@@ -1,6 +1,7 @@
 #![allow(clippy::needless_return)]
 
 use std::collections::HashMap;
+use itertools::Itertools;
 use rand::prelude::*;
 
 #[derive(Debug, Clone, Eq, PartialOrd, Ord, serde::Deserialize)]
@@ -346,5 +347,19 @@ impl WorldState {
 		}
 
 		return result;
+	}
+
+	pub fn do_bruteforce(&mut self) {
+		// it's not supposed to be quick but it has to create a solution
+		for solution in self.graph.clone().into_iter().permutations(self.graph.len()).unique() {
+			let mut sum = 0.0;
+			for pair in solution.windows(2) {
+				sum += self.get_edge((pair[0].clone(), pair[1].clone())).length;
+			}
+			if sum < self.best_solution_length {
+				self.best_solution_length = sum;
+				self.best_solution = solution;
+			}
+		}
 	}
 }

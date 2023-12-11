@@ -27,6 +27,8 @@ struct Config {
 	try_count: Option<u32>,
 	#[arg(short, long, conflicts_with = "try-count")]
 	record: bool,
+	#[arg(long)]
+	bruteforce: bool, // if it's set ignore everything (other params still required) and spit out the optimal solution found using a brute force algo
 }
 
 impl From<&Config> for ant_colony::ConfigData {
@@ -142,7 +144,11 @@ fn main() {
 					std::fs::write(format!("./output/{}.dot", index), output).unwrap();
 				}
 			} else {
-				solver.do_all_iterations();
+				if config.bruteforce {
+					solver.do_bruteforce()
+				} else {
+					solver.do_all_iterations();
+				}
 			}
 			println!("{}", solver.solution_to_graphviz());
 			eprintln!("Found solution with length {}", solver.best_solution_length);
