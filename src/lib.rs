@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use rand::prelude::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialOrd, Ord, serde::Deserialize)]
 pub struct GraphNode {
 	pub attraction_number: u32,
 	pub x: i32,
@@ -13,6 +13,12 @@ pub struct GraphNode {
 impl std::hash::Hash for GraphNode {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 		state.write_u32(self.attraction_number);
+	}
+}
+
+impl std::cmp::PartialEq for GraphNode {
+	fn eq(&self, other: &Self) -> bool {
+		return self.attraction_number == other.attraction_number;
 	}
 }
 
