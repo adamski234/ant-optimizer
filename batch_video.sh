@@ -15,9 +15,11 @@ do
 	cd images
 	if [ -x "$(nvidia-smi)" ]
 	then
-		ffmpeg -y -framerate 30 -i %d.dot.png -vcodec libx264 -qp 15 out.mkv
+		ffmpeg -y -framerate 30 -i %d.dot.png -vcodec libx264 -qp 15 out.mkv &
 	else
-		ffmpeg -y -framerate 30 -i %d.dot.png -vcodec hevc_nvenc -qp 15 out.mkv
+		ffmpeg -y -framerate 30 -i %d.dot.png -vcodec hevc_nvenc -qp 15 out.mkv &
 	fi
 	cd ../..
 done
+
+wait
