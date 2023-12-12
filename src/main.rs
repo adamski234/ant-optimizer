@@ -126,7 +126,7 @@ fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir
 			let nodes = solver.nodes_to_graphviz();
 			for (index, item) in frames.iter().enumerate() {
 				let output = format!("graph frame{} {{\n\
-					layout = \"sfdp\"\n\
+					layout = \"neato\"\n\
 					labelloc = \"t\"\n\
 					overlap = \"prism\"\n\
 					label = \"Frame {} of {}. Found solution is {}. Positions not to scale.\"\n\
