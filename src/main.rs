@@ -129,7 +129,7 @@ fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir
 					layout = \"neato\"\n\
 					labelloc = \"t\"\n\
 					overlap = \"prism\"\n\
-					label = \"Frame {} of {}. Found solution is {}. Positions not to scale.\"\n\
+					label = \"Frame {} of {}. Found solution is {}.\\nPositions not to scale.\"\n\
 					{}\n\n\
 					{}\n\
 					}}
@@ -178,11 +178,19 @@ fn batch_process_files(directory: &PathBuf, config: Config) {
 		}
 	} else {
 		// create directories for each output file
+		let mut threads = Vec::new();
 		for (filename, nodes) in node_map {
-			let directory = format!("{}/{}", directory.display(), filename);
-			std::fs::create_dir(format!("./{}/", directory)).unwrap();
-			let output = process_set_of_nodes(nodes, config.clone(), &directory.clone().into());
-			std::fs::write(format!("./{}/solution.dot", directory), output).unwrap();
+			let directory = directory.clone();
+			let config = config.clone();
+			threads.push(std::thread::spawn(move || {
+				let directory = format!("{}/{}", directory.display(), filename);
+				std::fs::create_dir(format!("./{}/", directory)).unwrap();
+				let output = process_set_of_nodes(nodes, config, &directory.clone().into());
+				std::fs::write(format!("./{}/solution.dot", directory), output).unwrap();
+			}));
+		}
+		for thread in threads {
+			thread.join().unwrap();
 		}
 	}
 }

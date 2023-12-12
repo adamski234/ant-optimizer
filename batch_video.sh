@@ -10,7 +10,7 @@ for dir in *
 do
 	cd $dir
 	mkdir images
-	ls | grep ".dot" | parallel dot {} -Goverlap=prism -Tpng -o ./images/{}.png
+	ls | grep ".dot" | parallel dot {} -Tpng -o ./images/{}.png
 	echo Creating video for $dir
 	cd images
 	if [ -x "$(nvidia-smi)" ]

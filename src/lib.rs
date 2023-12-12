@@ -84,7 +84,11 @@ impl Ant {
 				self.node_at = node.clone();
 				return Ok(());
 			} else {
-				costs.push(data.pheromone_strength.powi(self.pheromone_weight) * data.length.recip().powi(self.heuristic_weight));
+				if data.pheromone_strength == 0.0 {
+					costs.push(data.length.recip().powi(self.heuristic_weight));
+				} else {
+					costs.push(data.pheromone_strength.powi(self.pheromone_weight) * data.length.recip().powi(self.heuristic_weight));
+				}
 			}
 		}
 
