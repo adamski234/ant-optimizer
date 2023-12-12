@@ -5,7 +5,7 @@ evaporation_coefficients=(0 0.5 1) #3
 random_choice_chances=(0.3 0.8) #2
 pheromone_weights=(1 2 5) #3
 heuristic_weights=(1 3) #2
-runs_per_set=256
+runs_per_set=128
 
 rm -rf output
 rm -rf output_*
