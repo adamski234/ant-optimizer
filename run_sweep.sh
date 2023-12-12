@@ -30,7 +30,7 @@ do
 						echo "ants,iterations,evap_coeff,rand_chance,pher_weight,heur_weight" > output/run_data.csv
 						echo "$ants,$iterations,$evaporation_coefficient,$random_choice_chance,$pheromone_weight,$heuristic_weight" >> output/run_data.csv
 						mv output output_"$ants"_ants_"$iterations"_iters_"$evaporation_coefficient"_evapcoeff_"$random_choice_chance"_randchch_"$pheromone_weight"_pher_"$heuristic_weight"_heur
-						exit 1
+						#exit 1
 					done
 				done
 			done
