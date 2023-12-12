@@ -1,7 +1,8 @@
 #![allow(clippy::needless_return)]
 
-use std::path::PathBuf;
+use std::{path::PathBuf, collections::HashMap};
 
+use ant_colony::GraphNode;
 use clap::Parser;
 
 
@@ -89,69 +90,110 @@ impl BatchRunData {
 
 // first trim the leading spaces from files with `cut -c 2-`
 
+// returns string that was printed before
+fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir_to_write: &PathBuf) -> String {
+	let world_config = ant_colony::ConfigData::from(&config);
+	let mut solver = ant_colony::WorldState::new(nodes, world_config);
+	if let Some(tries) = config.try_count {
+		let tries_per_thread = (tries as usize).div_ceil(num_cpus::get());
+		let mut threads = Vec::with_capacity(num_cpus::get());
+		for _ in 0..num_cpus::get() {
+			let mut thread_solver = solver.clone();
+			threads.push(std::thread::spawn(move || {
+				let mut run_stats = BatchRunData::new();
+				for _ in 0..tries_per_thread {
+					thread_solver.do_all_iterations();
+					run_stats.add_run(thread_solver.best_solution_length);
+					thread_solver.reset();
+				}
+				return run_stats;
+			}));
+		}
+
+		let result = threads.into_iter().map(|handle| {
+			return handle.join();
+		}).reduce(|a, b| {
+			let mut batch = a.unwrap();
+			batch.add_batch(b.unwrap());
+			return Ok(batch);
+		}).unwrap().unwrap();
+		return format!("Finished {} runs. Longest found route is {}, shortest found route is {}. The average length is {}", result.run_count, result.max_result, result.min_result, result.average);
+	} else {
+		if config.record {
+			let low_color = colorgrad::Color::from_linear_rgba(0.0, 0.0, 1.0, 1.0);
+			let high_color = colorgrad::Color::from_linear_rgba(1.0, 0.0, 0.0, 0.0);
+			let frames = solver.do_all_iterations_with_graphviz_recording(low_color, high_color);
+			let nodes = solver.nodes_to_graphviz();
+			for (index, item) in frames.iter().enumerate() {
+				let output = format!("graph frame{} {{\n\
+					layout = \"sfdp\"\n\
+					labelloc = \"t\"\n\
+					overlap = \"prism\"\n\
+					label = \"Frame {} of {}. Found solution is {}. Positions not to scale.\"\n\
+					{}\n\n\
+					{}\n\
+					}}
+					", index, index, frames.len(), solver.best_solution_length, nodes, item
+				);
+				std::fs::write(format!("./{}/{}.dot", dir_to_write.display(), index), output).unwrap();
+			}
+		} else {
+			if config.bruteforce {
+				solver.do_bruteforce()
+			} else {
+				solver.do_all_iterations();
+			}
+		}
+		eprintln!("Found solution with length {}", solver.best_solution_length);
+		return format!("{}", solver.solution_to_graphviz());
+	}
+}
+
+fn read_file(path: &PathBuf) -> Vec<GraphNode> {
+	let mut reader = csv::ReaderBuilder::new().has_headers(false).delimiter(b' ').trim(csv::Trim::All).from_path(path).unwrap();
+	let mut nodes = Vec::<ant_colony::GraphNode>::new();
+	for result in reader.deserialize() {
+		nodes.push(result.unwrap());
+	}
+	return nodes;
+}
+
+fn read_directory(path: &PathBuf) -> HashMap<String, Vec<GraphNode>> {
+	let mut node_map = HashMap::new();
+	for file in std::fs::read_dir(path).unwrap() {
+		let file = file.unwrap();
+		let nodes = read_file(&file.path());
+		node_map.insert(file.file_name().into_string().unwrap(), nodes);
+	}
+	return node_map;
+}
+
+fn batch_process_files(directory: &PathBuf, config: Config) {
+	let node_map = read_directory(&config.path);
+	if config.try_count.is_some() {
+		// only save statistics
+		for (filename, nodes) in node_map {
+			let output = process_set_of_nodes(nodes, config.clone(), &"".into()); // won't write anything anyway
+			println!("File {}: {}", filename, output);
+		}
+	} else {
+		// create directories for each output file
+		for (filename, nodes) in node_map {
+			let directory = format!("{}/{}", directory.display(), filename);
+			std::fs::create_dir(format!("./{}/", directory)).unwrap();
+			let output = process_set_of_nodes(nodes, config.clone(), &directory.clone().into());
+			std::fs::write(format!("./{}/solution.dot", directory), output).unwrap();
+		}
+	}
+}
+
 fn main() {
 	let config = Config::parse();
 	if config.batch {
-		//
+		batch_process_files(&"output".into(), config);
 	} else {
-		let world_config = ant_colony::ConfigData::from(&config);
-		let mut reader = csv::ReaderBuilder::new().has_headers(false).delimiter(b' ').trim(csv::Trim::All).from_path(config.path).unwrap();
-		let mut nodes = Vec::<ant_colony::GraphNode>::new();
-		for result in reader.deserialize() {
-			nodes.push(result.unwrap());
-		}
-		let mut solver = ant_colony::WorldState::new(nodes, world_config);
-		if let Some(tries) = config.try_count {
-			let tries_per_thread = (tries as usize).div_ceil(num_cpus::get());
-			let mut threads = Vec::with_capacity(num_cpus::get());
-			for _ in 0..num_cpus::get() {
-				let mut thread_solver = solver.clone();
-				threads.push(std::thread::spawn(move || {
-					let mut run_stats = BatchRunData::new();
-					for _ in 0..tries_per_thread {
-						thread_solver.do_all_iterations();
-						run_stats.add_run(thread_solver.best_solution_length);
-						thread_solver.reset();
-					}
-					return run_stats;
-				}));
-			}
-
-			let result = threads.into_iter().map(|handle| {
-				return handle.join();
-			}).reduce(|a, b| {
-				let mut batch = a.unwrap();
-				batch.add_batch(b.unwrap());
-				return Ok(batch);
-			}).unwrap().unwrap();
-			println!("Finished {} runs. Longest found route is {}, shortest found route is {}. The average length is {}", result.run_count, result.max_result, result.min_result, result.average);
-		} else {
-			if config.record {
-				let low_color = colorgrad::Color::from_linear_rgba(0.0, 0.0, 1.0, 1.0);
-				let high_color = colorgrad::Color::from_linear_rgba(1.0, 0.0, 0.0, 0.0);
-				let frames = solver.do_all_iterations_with_graphviz_recording(low_color, high_color);
-				let nodes = solver.nodes_to_graphviz();
-				for (index, item) in frames.iter().enumerate() {
-					let output = format!("graph frame{} {{\n\
-						layout = \"sfdp\"\n\
-						labelloc = \"t\"\n\
-						label = \"Frame {} of {}. Found solution is {}.\\nPositions not to scale.\"\n\
-						{}\n\n\
-						{}\n\
-						}}
-						", index, index, frames.len(), solver.best_solution_length, nodes, item
-					);
-					std::fs::write(format!("./output/{}.dot", index), output).unwrap();
-				}
-			} else {
-				if config.bruteforce {
-					solver.do_bruteforce()
-				} else {
-					solver.do_all_iterations();
-				}
-			}
-			println!("{}", solver.solution_to_graphviz());
-			eprintln!("Found solution with length {}", solver.best_solution_length);
-		}
+		let nodes = read_file(&config.path);
+		let output = process_set_of_nodes(nodes, config, &"output".into());
+		println!("{}", output);
 	}
 }
