@@ -6,14 +6,14 @@ use rand::prelude::*;
 
 #[derive(Debug, Clone, Eq, PartialOrd, Ord, serde::Deserialize)]
 pub struct GraphNode {
-	pub attraction_number: u16,
+	pub attraction_number: u8,
 	pub x: i32,
 	pub y: i32
 }
 
 impl std::hash::Hash for GraphNode {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-		state.write_u16(self.attraction_number);
+		state.write_u8(self.attraction_number);
 	}
 }
 
@@ -165,19 +165,18 @@ pub struct WorldState {
 
 impl WorldState {
 	pub fn new(input_nodes: Vec<GraphNode>, config: ConfigData) -> Self {
-		let attraction_count = input_nodes.len();
 		let mut result = WorldState {
 			graph: input_nodes,
 			ants: Vec::with_capacity(config.ant_count),
 			//edges: fnv::FnvHashMap::with_capacity_and_hasher(attraction_count * (attraction_count - 1) / 2, Default::default()), // holds exactly as many edges as required
-			edges: Vec::with_capacity(attraction_count * attraction_count),
+			edges: Vec::with_capacity(0x1 << 16),
 			iteration_count: config.iteration_count,
 			pheromone_evaporation_coefficient: config.pheromone_evaporation_coefficient,
 			best_solution: Vec::new(),
 			best_solution_length: f64::MAX,
 		};
 		unsafe {
-			result.edges.set_len(attraction_count * attraction_count);
+			result.edges.set_len(0x1 << 16);
 		}
 
 		for _ in 0..config.ant_count {
@@ -192,13 +191,20 @@ impl WorldState {
 	fn init_edges(&mut self) {
 		for (index, node) in self.graph.iter().enumerate() {
 			for second_node in self.graph[index + 1 ..].iter() {
+				//println!("{}, {} => {}", node.attraction_number, second_node.attraction_number, (((node.attraction_number as u16) << 8) | (second_node.attraction_number as u16)));
 				let to_insert = EdgeData {
 					first_node: node.clone(),
 					second_node: second_node.clone(),
 					length: node.distance_to(second_node),
 					pheromone_strength: 0.01
 				};
-				self.edges[(node.attraction_number * second_node.attraction_number) as usize] = to_insert;
+				let hash;
+				if node.attraction_number > second_node.attraction_number {
+					hash = ((node.attraction_number as u16) << 8) | (second_node.attraction_number as u16);
+				} else {
+					hash = ((second_node.attraction_number as u16) << 8) | (node.attraction_number as u16);
+				}
+				self.edges[hash as usize] = to_insert;
 			}
 		}
 	}
@@ -213,7 +219,13 @@ impl WorldState {
 	}
 
 	fn get_edge(&mut self, pair: (GraphNode, GraphNode)) -> &mut EdgeData {
-		return &mut self.edges[(pair.0.attraction_number * pair.1.attraction_number) as usize];
+		let hash;
+		if pair.0.attraction_number > pair.1.attraction_number {
+			hash = ((pair.0.attraction_number as u16) << 8) | (pair.1.attraction_number as u16);
+		} else {
+			hash = ((pair.1.attraction_number as u16) << 8) | (pair.0.attraction_number as u16);
+		}
+		return &mut self.edges[hash as usize];
 	}
 
 	// moves ants until they're all done
