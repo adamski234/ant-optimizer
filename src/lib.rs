@@ -45,46 +45,41 @@ pub struct Ant {
 	pub random_choice_chance: f64, // less than 1
 	pub pheromone_weight: i32,
 	pub heuristic_weight: i32,
-	possible_paths: Vec<GraphNode>,
+	nodes_to_visit: Vec<GraphNode>,
 	costs: Vec<f64>,
 }
 
 impl Ant {
-	fn new(heuristic_weight: i32, pheromone_weight: i32, random_choice_chance: f64) -> Self {
+	fn new(heuristic_weight: i32, pheromone_weight: i32, random_choice_chance: f64, nodes: Vec<GraphNode>) -> Self {
 		return Self {
 			node_at: GraphNode { attraction_number: 0, x: 0, y: 0 }, // empty init, randomize later
-			current_path: Vec::new(),
+			current_path: Vec::with_capacity(nodes.len()),
 			current_distance: 0.0,
 			heuristic_weight,
 			pheromone_weight,
 			random_choice_chance,
-			possible_paths: Vec::with_capacity(50),
-			costs: Vec::with_capacity(50),
+			costs: Vec::with_capacity(nodes.len()),
+			nodes_to_visit: nodes,
 		};
 	}
 	
 	fn move_ant(&mut self, world: &mut WorldState) -> Result<(), AntError> {
-		// Generate all possible ways to go
-		self.possible_paths.clear();
 		self.costs.clear();
-		for node in &mut world.graph {
-			if node != &self.node_at && !self.current_path.contains(node) {
-				self.possible_paths.push(node.clone());
-			}
-		}
+
 		// we're done
-		if self.possible_paths.is_empty() {
+		if self.nodes_to_visit.is_empty() {
 			return Err(AntError::CannotMove);
 		}
 
-		// and pick the next destination
+		// pick the next destination
 		let next_node;
 		if rand::thread_rng().gen::<f64>() < self.random_choice_chance {
 			// random uniform selection
-			next_node = self.possible_paths.choose(&mut rand::thread_rng()).unwrap().clone();
+			next_node = self.nodes_to_visit.choose(&mut rand::thread_rng()).unwrap().clone();
 		} else {
+			let mut to_remove = None;
 			// create the costs table
-			for node in &mut self.possible_paths {
+			for node in &mut self.nodes_to_visit {
 				let data = world.get_edge((self.node_at.clone(), node.clone()));
 				if data.length == 0.0 {
 					// zero distance means we jump straight there and ignore every other possibility
@@ -92,7 +87,7 @@ impl Ant {
 					// see 67 and 68 in A-n80-k10.txt
 					self.current_path.push(self.node_at.clone());
 					self.node_at = node.clone();
-					return Ok(());
+					to_remove = Some(self.node_at.clone());
 				} else {
 					if data.pheromone_strength == 0.0 {
 						self.costs.push(data.length.recip().powi(self.heuristic_weight));
@@ -101,13 +96,18 @@ impl Ant {
 					}
 				}
 			}
+			if let Some(node) = to_remove {
+				self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &node).unwrap());
+				return Ok(());
+			}
 			
 			// roulette selection
-			next_node = self.possible_paths[rand::distributions::WeightedIndex::new(self.costs.clone()).unwrap().sample(&mut rand::thread_rng())].clone();
+			next_node = self.nodes_to_visit[rand::distributions::WeightedIndex::new(self.costs.clone()).unwrap().sample(&mut rand::thread_rng())].clone();
 		}
 
 		self.current_path.push(self.node_at.clone());
 		self.current_distance += world.get_edge((self.node_at.clone(), next_node.clone())).length;
+		self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &next_node).unwrap());
 		self.node_at = next_node;
 
 		return Ok(());
@@ -181,7 +181,7 @@ impl WorldState {
 		}
 
 		for _ in 0..config.ant_count {
-			result.ants.push(Ant::new(config.heuristic_weight, config.pheromone_weight, config.random_choice_chance));
+			result.ants.push(Ant::new(config.heuristic_weight, config.pheromone_weight, config.random_choice_chance, result.graph.clone()));
 		}
 
 		result.init_edges();
@@ -206,7 +206,9 @@ impl WorldState {
 	pub fn init_ants(&mut self) {
 		for ant in &mut self.ants {
 			ant.clear();
+			ant.nodes_to_visit = self.graph.clone();
 			ant.node_at = self.graph.choose(&mut rand::thread_rng()).unwrap().clone();
+			ant.nodes_to_visit.swap_remove(ant.nodes_to_visit.iter().position(|x| *x == ant.node_at).unwrap());
 		}
 	}
 
