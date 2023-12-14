@@ -19,5 +19,5 @@ itertools = "0.12"
 members = ["stat_collector"]
 
 # Uncomment for profiling with cargo-flamegraph
-#[profile.release]
-#debug = true
+[profile.release]
+debug = true

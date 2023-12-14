@@ -6,14 +6,14 @@ use rand::prelude::*;
 
 #[derive(Debug, Clone, Eq, PartialOrd, Ord, serde::Deserialize)]
 pub struct GraphNode {
-	pub attraction_number: u32,
+	pub attraction_number: u8,
 	pub x: i32,
 	pub y: i32
 }
 
 impl std::hash::Hash for GraphNode {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-		state.write_u32(self.attraction_number);
+		state.write_u8(self.attraction_number);
 	}
 }
 
@@ -44,7 +44,9 @@ pub struct Ant {
 	pub current_distance: f64,
 	pub random_choice_chance: f64, // less than 1
 	pub pheromone_weight: i32,
-	pub heuristic_weight: i32
+	pub heuristic_weight: i32,
+	possible_paths: Vec<GraphNode>,
+	costs: Vec<f64>,
 }
 
 impl Ant {
@@ -56,25 +58,27 @@ impl Ant {
 			heuristic_weight,
 			pheromone_weight,
 			random_choice_chance,
+			possible_paths: Vec::with_capacity(50),
+			costs: Vec::with_capacity(50),
 		};
 	}
 	
 	fn move_ant(&mut self, world: &mut WorldState) -> Result<(), AntError> {
 		// Generate all possible ways to go
-		let mut possible_paths = Vec::with_capacity(world.edges.len());
+		self.possible_paths.clear();
+		self.costs.clear();
 		for node in &mut world.graph {
 			if node != &self.node_at && !self.current_path.contains(node) {
-				possible_paths.push(node.clone());
+				self.possible_paths.push(node.clone());
 			}
 		}
 		// we're done
-		if possible_paths.is_empty() {
+		if self.possible_paths.is_empty() {
 			return Err(AntError::CannotMove);
 		}
 
 		// create the costs table
-		let mut costs = Vec::with_capacity(possible_paths.len());
-		for node in &mut possible_paths {
+		for node in &mut self.possible_paths {
 			let data = world.get_edge((self.node_at.clone(), node.clone()));
 			if data.length == 0.0 {
 				// zero distance means we jump straight there and ignore every other possibility
@@ -85,9 +89,9 @@ impl Ant {
 				return Ok(());
 			} else {
 				if data.pheromone_strength == 0.0 {
-					costs.push(data.length.recip().powi(self.heuristic_weight));
+					self.costs.push(data.length.recip().powi(self.heuristic_weight));
 				} else {
-					costs.push(data.pheromone_strength.powi(self.pheromone_weight) * data.length.recip().powi(self.heuristic_weight));
+					self.costs.push(data.pheromone_strength.powi(self.pheromone_weight) * data.length.recip().powi(self.heuristic_weight));
 				}
 			}
 		}
@@ -96,10 +100,10 @@ impl Ant {
 		let next_node;
 		if rand::thread_rng().gen::<f64>() < self.random_choice_chance {
 			// random uniform selection
-			next_node = possible_paths.choose(&mut rand::thread_rng()).unwrap().clone();
+			next_node = self.possible_paths.choose(&mut rand::thread_rng()).unwrap().clone();
 		} else {
 			// roulette selection
-			next_node = possible_paths[rand::distributions::WeightedIndex::new(costs).unwrap().sample(&mut rand::thread_rng())].clone();
+			next_node = self.possible_paths[rand::distributions::WeightedIndex::new(self.costs.clone()).unwrap().sample(&mut rand::thread_rng())].clone();
 		}
 
 		self.current_path.push(self.node_at.clone());
