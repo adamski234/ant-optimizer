@@ -77,31 +77,31 @@ impl Ant {
 			return Err(AntError::CannotMove);
 		}
 
-		// create the costs table
-		for node in &mut self.possible_paths {
-			let data = world.get_edge((self.node_at.clone(), node.clone()));
-			if data.length == 0.0 {
-				// zero distance means we jump straight there and ignore every other possibility
-				// removes a node at no cost and it is always the most optimal solution
-				// see 67 and 68 in A-n80-k10.txt
-				self.current_path.push(self.node_at.clone());
-				self.node_at = node.clone();
-				return Ok(());
-			} else {
-				if data.pheromone_strength == 0.0 {
-					self.costs.push(data.length.recip().powi(self.heuristic_weight));
-				} else {
-					self.costs.push(data.pheromone_strength.powi(self.pheromone_weight) * data.length.recip().powi(self.heuristic_weight));
-				}
-			}
-		}
-
 		// and pick the next destination
 		let next_node;
 		if rand::thread_rng().gen::<f64>() < self.random_choice_chance {
 			// random uniform selection
 			next_node = self.possible_paths.choose(&mut rand::thread_rng()).unwrap().clone();
 		} else {
+			// create the costs table
+			for node in &mut self.possible_paths {
+				let data = world.get_edge((self.node_at.clone(), node.clone()));
+				if data.length == 0.0 {
+					// zero distance means we jump straight there and ignore every other possibility
+					// removes a node at no cost and it is always the most optimal solution
+					// see 67 and 68 in A-n80-k10.txt
+					self.current_path.push(self.node_at.clone());
+					self.node_at = node.clone();
+					return Ok(());
+				} else {
+					if data.pheromone_strength == 0.0 {
+						self.costs.push(data.length.recip().powi(self.heuristic_weight));
+					} else {
+						self.costs.push(data.pheromone_strength.powi(self.pheromone_weight) * data.length.recip().powi(self.heuristic_weight));
+					}
+				}
+			}
+			
 			// roulette selection
 			next_node = self.possible_paths[rand::distributions::WeightedIndex::new(self.costs.clone()).unwrap().sample(&mut rand::thread_rng())].clone();
 		}
