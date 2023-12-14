@@ -243,8 +243,10 @@ impl WorldState {
 
 	fn update_pheromones(&mut self) {
 		// evaporate pheromones
-		for data in &mut self.edges {
-			data.pheromone_strength *= self.pheromone_evaporation_coefficient;
+		for (index, node) in self.graph.clone().iter().enumerate() {
+			for second_node in self.graph.clone()[index + 1 ..].iter() {
+				self.get_edge((node.clone(), second_node.clone())).pheromone_strength *= self.pheromone_evaporation_coefficient;
+			}
 		}
 
 		// add pheromones
