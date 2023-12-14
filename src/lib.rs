@@ -6,14 +6,14 @@ use rand::prelude::*;
 
 #[derive(Debug, Clone, Eq, PartialOrd, Ord, serde::Deserialize)]
 pub struct GraphNode {
-	pub attraction_number: u8,
+	pub attraction_number: u16,
 	pub x: i32,
 	pub y: i32
 }
 
 impl std::hash::Hash for GraphNode {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-		state.write_u8(self.attraction_number);
+		state.write_u16(self.attraction_number);
 	}
 }
 
@@ -121,6 +121,8 @@ impl Ant {
 
 #[derive(Debug, Clone)]
 pub struct EdgeData {
+	first_node: GraphNode,
+	second_node: GraphNode,
 	pheromone_strength: f64,
 	length: f64,
 }
@@ -153,7 +155,8 @@ pub struct MultipleIterationGraphviz {
 pub struct WorldState {
 	graph: Vec<GraphNode>,
 	pub ants: Vec<Ant>,
-	pub edges: fnv::FnvHashMap<(GraphNode, GraphNode), EdgeData>, // populate at init, key is ordered tuple simulating an unordered pair, with first node having lower att number
+	//pub edges: fnv::FnvHashMap<(GraphNode, GraphNode), EdgeData>, // populate at init, key is ordered tuple simulating an unordered pair, with first node having lower att number
+	pub edges: Vec<EdgeData>,
 	iteration_count: u32,
 	pheromone_evaporation_coefficient: f64,
 	pub best_solution: Vec<GraphNode>,
@@ -166,12 +169,16 @@ impl WorldState {
 		let mut result = WorldState {
 			graph: input_nodes,
 			ants: Vec::with_capacity(config.ant_count),
-			edges: fnv::FnvHashMap::with_capacity_and_hasher(attraction_count * (attraction_count - 1) / 2, Default::default()), // holds exactly as many edges as required
+			//edges: fnv::FnvHashMap::with_capacity_and_hasher(attraction_count * (attraction_count - 1) / 2, Default::default()), // holds exactly as many edges as required
+			edges: Vec::with_capacity(attraction_count * attraction_count),
 			iteration_count: config.iteration_count,
 			pheromone_evaporation_coefficient: config.pheromone_evaporation_coefficient,
 			best_solution: Vec::new(),
 			best_solution_length: f64::MAX,
 		};
+		unsafe {
+			result.edges.set_len(attraction_count * attraction_count);
+		}
 
 		for _ in 0..config.ant_count {
 			result.ants.push(Ant::new(config.heuristic_weight, config.pheromone_weight, config.random_choice_chance));
@@ -186,14 +193,12 @@ impl WorldState {
 		for (index, node) in self.graph.iter().enumerate() {
 			for second_node in self.graph[index + 1 ..].iter() {
 				let to_insert = EdgeData {
+					first_node: node.clone(),
+					second_node: second_node.clone(),
 					length: node.distance_to(second_node),
 					pheromone_strength: 0.01
 				};
-				if node.attraction_number > second_node.attraction_number {
-					self.edges.insert((second_node.clone(), node.clone()), to_insert);
-				} else {
-					self.edges.insert((node.clone(), second_node.clone()), to_insert);
-				}
+				self.edges[(node.attraction_number * second_node.attraction_number) as usize] = to_insert;
 			}
 		}
 	}
@@ -206,11 +211,7 @@ impl WorldState {
 	}
 
 	fn get_edge(&mut self, pair: (GraphNode, GraphNode)) -> &mut EdgeData {
-		if pair.0.attraction_number > pair.1.attraction_number {
-			return self.edges.get_mut(&(pair.1, pair.0)).unwrap();
-		} else {
-			return self.edges.get_mut(&pair).unwrap();
-		}
+		return &mut self.edges[(pair.0.attraction_number * pair.1.attraction_number) as usize];
 	}
 
 	// moves ants until they're all done
@@ -228,7 +229,7 @@ impl WorldState {
 
 	fn update_pheromones(&mut self) {
 		// evaporate pheromones
-		for data in &mut self.edges.values_mut() {
+		for data in &mut self.edges {
 			data.pheromone_strength *= self.pheromone_evaporation_coefficient;
 		}
 
@@ -344,13 +345,13 @@ impl WorldState {
 			min_pheromones: f64::MAX,
 		};
 
-		for (key, data) in &self.edges {
-			result.edges.insert(key.clone(), data.pheromone_strength);
-			if data.pheromone_strength > result.max_pheromones {
-				result.max_pheromones = data.pheromone_strength;
+		for edge in &self.edges {
+			result.edges.insert((edge.first_node.clone(), edge.second_node.clone()), edge.pheromone_strength);
+			if edge.pheromone_strength > result.max_pheromones {
+				result.max_pheromones = edge.pheromone_strength;
 			}
-			if data.pheromone_strength < result.min_pheromones {
-				result.min_pheromones = data.pheromone_strength;
+			if edge.pheromone_strength < result.min_pheromones {
+				result.min_pheromones = edge.pheromone_strength;
 			}
 		}
 
