@@ -73,6 +73,7 @@ impl Ant {
 
 		// pick the next destination
 		let next_node;
+		let mut cost_sum = 0.0;
 		if rand::thread_rng().gen::<f64>() < self.random_choice_chance {
 			// random uniform selection
 			next_node = self.nodes_to_visit.choose(&mut rand::thread_rng()).unwrap().clone();
@@ -90,9 +91,13 @@ impl Ant {
 					to_remove = Some(self.node_at.clone());
 				} else {
 					if data.pheromone_strength == 0.0 {
-						self.costs.push(data.length.recip().powi(self.heuristic_weight));
+						let cost = data.length.recip().powi(self.heuristic_weight);
+						self.costs.push(cost);
+						cost_sum += cost;
 					} else {
-						self.costs.push(data.pheromone_strength.powi(self.pheromone_weight) * data.length.recip().powi(self.heuristic_weight));
+						let cost = data.pheromone_strength.powi(self.pheromone_weight) * data.length.recip().powi(self.heuristic_weight);
+						self.costs.push(cost);
+						cost_sum += cost;
 					}
 				}
 			}
@@ -102,7 +107,17 @@ impl Ant {
 			}
 			
 			// roulette selection
-			next_node = self.nodes_to_visit[rand::distributions::WeightedIndex::new(self.costs.clone()).unwrap().sample(&mut rand::thread_rng())].clone();
+			let number_to_match = rand::random::<f64>() * cost_sum;
+			let mut cost_so_far = 0.0;
+			let mut node_index = 0;
+			for (index, item) in self.costs.iter().enumerate() {
+				cost_so_far += item;
+				if cost_so_far > number_to_match {
+					node_index = index;
+					break;
+				}
+			}
+			next_node = self.nodes_to_visit[node_index].clone();
 		}
 
 		self.current_path.push(self.node_at.clone());
