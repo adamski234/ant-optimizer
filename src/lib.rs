@@ -44,18 +44,16 @@ pub struct Ant {
 	pub current_distance: f64,
 	pub random_choice_chance: f64, // less than 1
 	pub pheromone_weight: i32,
-	pub heuristic_weight: i32,
 	nodes_to_visit: Vec<GraphNode>,
 	costs: Vec<f64>,
 }
 
 impl Ant {
-	fn new(heuristic_weight: i32, pheromone_weight: i32, random_choice_chance: f64, nodes: Vec<GraphNode>) -> Self {
+	fn new(pheromone_weight: i32, random_choice_chance: f64, nodes: Vec<GraphNode>) -> Self {
 		return Self {
 			node_at: GraphNode { attraction_number: 0, x: 0, y: 0 }, // empty init, randomize later
 			current_path: Vec::with_capacity(nodes.len()),
 			current_distance: 0.0,
-			heuristic_weight,
 			pheromone_weight,
 			random_choice_chance,
 			costs: Vec::with_capacity(nodes.len()),
@@ -91,11 +89,11 @@ impl Ant {
 					to_remove = Some(self.node_at.clone());
 				} else {
 					if data.pheromone_strength == 0.0 {
-						let cost = data.length.recip().powi(self.heuristic_weight);
+						let cost = data.length_cost;
 						self.costs.push(cost);
 						cost_sum += cost;
 					} else {
-						let cost = data.pheromone_strength.powi(self.pheromone_weight) * data.length.recip().powi(self.heuristic_weight);
+						let cost = data.pheromone_strength.powi(self.pheromone_weight) * data.length_cost;
 						self.costs.push(cost);
 						cost_sum += cost;
 					}
@@ -140,6 +138,7 @@ pub struct EdgeData {
 	second_node: GraphNode,
 	pheromone_strength: f64,
 	length: f64,
+	length_cost: f64, // 0 if length is 0
 }
 
 #[derive(Debug, Clone)]
@@ -176,6 +175,7 @@ pub struct WorldState {
 	pheromone_evaporation_coefficient: f64,
 	pub best_solution: Vec<GraphNode>,
 	pub best_solution_length: f64,
+	pub heuristic_weight: i32,
 }
 
 impl WorldState {
@@ -189,13 +189,14 @@ impl WorldState {
 			pheromone_evaporation_coefficient: config.pheromone_evaporation_coefficient,
 			best_solution: Vec::new(),
 			best_solution_length: f64::MAX,
+			heuristic_weight: config.heuristic_weight,
 		};
 		unsafe {
 			result.edges.set_len(0x1 << 16);
 		}
 
 		for _ in 0..config.ant_count {
-			result.ants.push(Ant::new(config.heuristic_weight, config.pheromone_weight, config.random_choice_chance, result.graph.clone()));
+			result.ants.push(Ant::new(config.pheromone_weight, config.random_choice_chance, result.graph.clone()));
 		}
 
 		result.init_edges();
@@ -207,11 +208,13 @@ impl WorldState {
 		for (index, node) in self.graph.iter().enumerate() {
 			for second_node in self.graph[index + 1 ..].iter() {
 				//println!("{}, {} => {}", node.attraction_number, second_node.attraction_number, (((node.attraction_number as u16) << 8) | (second_node.attraction_number as u16)));
+				let length = node.distance_to(second_node);
 				let to_insert = EdgeData {
 					first_node: node.clone(),
 					second_node: second_node.clone(),
-					length: node.distance_to(second_node),
-					pheromone_strength: 0.01
+					length: length,
+					pheromone_strength: 0.01,
+					length_cost: if length != 0.0 { length.recip().powi(self.heuristic_weight) } else { 0.0 },
 				};
 				let hash;
 				if node.attraction_number > second_node.attraction_number {
