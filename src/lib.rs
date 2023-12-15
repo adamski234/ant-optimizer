@@ -40,7 +40,7 @@ enum AntError {
 #[derive(Debug, Clone)]
 pub struct Ant {
 	pub node_at: GraphNode,
-	pub current_path: Vec<GraphNode>,
+	pub current_path: Vec<u8>, // Added assumption: attraction number is always one higher than index in the original 
 	pub current_distance: f64,
 	pub random_choice_chance: f64, // less than 1
 	pub pheromone_weight: i32,
@@ -81,12 +81,12 @@ impl Ant {
 			let mut to_remove = None;
 			// create the costs table
 			for node in &mut self.nodes_to_visit {
-				let data = world.get_edge((self.node_at.clone(), node.clone()));
+				let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
 				if data.length == 0.0 {
 					// zero distance means we jump straight there and ignore every other possibility
 					// removes a node at no cost and it is always the most optimal solution
 					// see 67 and 68 in A-n80-k10.txt
-					self.current_path.push(self.node_at.clone());
+					self.current_path.push(self.node_at.attraction_number);
 					self.node_at = node.clone();
 					to_remove = Some(self.node_at.clone());
 				} else {
@@ -120,8 +120,8 @@ impl Ant {
 			next_node = self.nodes_to_visit[node_index].clone();
 		}
 
-		self.current_path.push(self.node_at.clone());
-		self.current_distance += world.get_edge((self.node_at.clone(), next_node.clone())).length;
+		self.current_path.push(self.node_at.attraction_number);
+		self.current_distance += world.get_edge((self.node_at.attraction_number, next_node.attraction_number)).length;
 		self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &next_node).unwrap());
 		self.node_at = next_node;
 
@@ -233,12 +233,12 @@ impl WorldState {
 		}
 	}
 
-	fn get_edge(&mut self, pair: (GraphNode, GraphNode)) -> &mut EdgeData {
+	fn get_edge(&mut self, pair: (u8, u8)) -> &mut EdgeData {
 		let hash;
-		if pair.0.attraction_number > pair.1.attraction_number {
-			hash = ((pair.0.attraction_number as u16) << 8) | (pair.1.attraction_number as u16);
+		if pair.0 > pair.1 {
+			hash = ((pair.0 as u16) << 8) | (pair.1 as u16);
 		} else {
-			hash = ((pair.1.attraction_number as u16) << 8) | (pair.0.attraction_number as u16);
+			hash = ((pair.1 as u16) << 8) | (pair.0 as u16);
 		}
 		return &mut self.edges[hash as usize];
 	}
@@ -250,8 +250,8 @@ impl WorldState {
 			while ant.move_ant(self).is_ok() {
 				//
 			}
-			ant.current_path.push(ant.node_at.clone());
-			ant.current_distance += self.get_edge((ant.current_path[ant.current_path.len() - 2].clone(), ant.node_at.clone())).length;
+			ant.current_path.push(ant.node_at.attraction_number);
+			ant.current_distance += self.get_edge((ant.current_path[ant.current_path.len() - 2].clone(), ant.node_at.attraction_number)).length;
 		}
 		self.ants = temp;
 	}
@@ -260,7 +260,7 @@ impl WorldState {
 		// evaporate pheromones
 		for (index, node) in self.graph.clone().iter().enumerate() {
 			for second_node in self.graph.clone()[index + 1 ..].iter() {
-				self.get_edge((node.clone(), second_node.clone())).pheromone_strength *= self.pheromone_evaporation_coefficient;
+				self.get_edge((node.attraction_number, second_node.attraction_number)).pheromone_strength *= self.pheromone_evaporation_coefficient;
 			}
 		}
 
@@ -275,7 +275,9 @@ impl WorldState {
 	fn update_best_solution(&mut self) {
 		for ant in &self.ants {
 			if ant.current_distance < self.best_solution_length {
-				self.best_solution = ant.current_path.clone();
+				self.best_solution = ant.current_path.iter().map(|x| {
+					return self.graph[(*x - 1) as usize].clone();
+				}).collect_vec();
 				self.best_solution_length = ant.current_distance;
 			}
 		}
@@ -394,7 +396,7 @@ impl WorldState {
 		for solution in self.graph.clone().into_iter().permutations(self.graph.len()).unique() {
 			let mut sum = 0.0;
 			for pair in solution.windows(2) {
-				sum += self.get_edge((pair[0].clone(), pair[1].clone())).length;
+				sum += self.get_edge((pair[0].attraction_number, pair[1].attraction_number)).length;
 			}
 			if sum < self.best_solution_length {
 				self.best_solution_length = sum;
