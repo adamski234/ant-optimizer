@@ -61,7 +61,7 @@ impl Ant {
 		};
 	}
 	
-	fn move_ant(&mut self, world: &mut WorldState) -> Result<(), AntError> {
+	fn move_ant(&mut self, world: &mut WorldState, random_source: &mut ThreadRng) -> Result<(), AntError> {
 		self.costs.clear();
 
 		// we're done
@@ -72,9 +72,9 @@ impl Ant {
 		// pick the next destination
 		let next_node;
 		let mut cost_sum = 0.0;
-		if rand::thread_rng().gen::<f64>() < self.random_choice_chance {
+		if random_source.gen::<f64>() < self.random_choice_chance {
 			// random uniform selection
-			next_node = self.nodes_to_visit.choose(&mut rand::thread_rng()).unwrap().clone();
+			next_node = self.nodes_to_visit.choose(random_source).unwrap().clone();
 		} else {
 			let mut to_remove = None;
 			// create the costs table
@@ -93,7 +93,7 @@ impl Ant {
 						self.costs.push(cost);
 						cost_sum += cost;
 					} else {
-						let cost = data.pheromone_strength.powi(self.pheromone_weight) * data.length_cost;
+						let cost = data.pheromone_cost * data.length_cost;
 						self.costs.push(cost);
 						cost_sum += cost;
 					}
@@ -105,7 +105,7 @@ impl Ant {
 			}
 			
 			// roulette selection
-			let number_to_match = rand::random::<f64>() * cost_sum;
+			let number_to_match = random_source.gen::<f64>() * cost_sum;
 			let mut cost_so_far = 0.0;
 			let mut node_index = 0;
 			for (index, item) in self.costs.iter().enumerate() {
@@ -139,6 +139,7 @@ pub struct EdgeData {
 	pheromone_strength: f64,
 	length: f64,
 	length_cost: f64, // 0 if length is 0
+	pheromone_cost: f64
 }
 
 #[derive(Debug, Clone)]
@@ -176,6 +177,7 @@ pub struct WorldState {
 	pub best_solution: Vec<GraphNode>,
 	pub best_solution_length: f64,
 	pub heuristic_weight: i32,
+	pub pheromone_weight: i32,
 }
 
 impl WorldState {
@@ -190,6 +192,7 @@ impl WorldState {
 			best_solution: Vec::new(),
 			best_solution_length: f64::MAX,
 			heuristic_weight: config.heuristic_weight,
+			pheromone_weight: config.pheromone_weight,
 		};
 		unsafe {
 			result.edges.set_len(0x1 << 16);
@@ -215,6 +218,7 @@ impl WorldState {
 					length: length,
 					pheromone_strength: 0.01,
 					length_cost: if length != 0.0 { length.recip().powi(self.heuristic_weight) } else { 0.0 },
+					pheromone_cost: (0.01_f64).powi(self.pheromone_weight),
 				};
 				let hash;
 				if node.attraction_number > second_node.attraction_number {
@@ -248,9 +252,10 @@ impl WorldState {
 
 	// moves ants until they're all done
 	fn move_ants(&mut self) {
+		let mut random_source = rand::thread_rng();
 		let mut temp = self.ants.clone(); // evil clone to get around the borrow checker
 		for ant in &mut temp {
-			while ant.move_ant(self).is_ok() {
+			while ant.move_ant(self, &mut random_source).is_ok() {
 				//
 			}
 			ant.current_path.push(ant.node_at.attraction_number);
@@ -268,9 +273,12 @@ impl WorldState {
 		}
 
 		// add pheromones
+		let pheromone_weight = self.pheromone_weight;
 		for ant in &self.ants.clone() {
 			for pair in ant.current_path.windows(2) {
-				self.get_edge((pair[0].clone(), pair[1].clone())).pheromone_strength += ant.current_distance.recip();
+				let edge = self.get_edge((pair[0].clone(), pair[1].clone()));
+				edge.pheromone_strength += ant.current_distance.recip();
+				edge.pheromone_cost = edge.pheromone_strength.powi(pheromone_weight);
 			}
 		}
 	}
