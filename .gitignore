@@ -1,2 +1,7 @@
 /target
 /output
+/bin
+/etc
+/lib
+/lib64
+/share
