@@ -43,18 +43,16 @@ pub struct Ant {
 	pub current_path: Vec<u8>, // Added assumption: attraction number is always one higher than index in the original 
 	pub current_distance: f64,
 	pub random_choice_chance: f64, // less than 1
-	pub pheromone_weight: i32,
 	nodes_to_visit: Vec<GraphNode>,
 	costs: Vec<f64>,
 }
 
 impl Ant {
-	fn new(pheromone_weight: i32, random_choice_chance: f64, nodes: Vec<GraphNode>) -> Self {
+	fn new(random_choice_chance: f64, nodes: Vec<GraphNode>) -> Self {
 		return Self {
 			node_at: GraphNode { attraction_number: 0, x: 0, y: 0 }, // empty init, randomize later
 			current_path: Vec::with_capacity(nodes.len()),
 			current_distance: 0.0,
-			pheromone_weight,
 			random_choice_chance,
 			costs: Vec::with_capacity(nodes.len()),
 			nodes_to_visit: nodes,
@@ -146,8 +144,8 @@ pub struct EdgeData {
 pub struct ConfigData {
 	pub ant_count: usize,
 	pub random_choice_chance: f64,
-	pub pheromone_weight: i32,
-	pub heuristic_weight: i32,
+	pub pheromone_weight: f64,
+	pub heuristic_weight: f64,
 	pub iteration_count: u32,
 	pub pheromone_evaporation_coefficient: f64,
 }
@@ -176,8 +174,8 @@ pub struct WorldState {
 	pheromone_evaporation_coefficient: f64,
 	pub best_solution: Vec<GraphNode>,
 	pub best_solution_length: f64,
-	pub heuristic_weight: i32,
-	pub pheromone_weight: i32,
+	pub heuristic_weight: f64,
+	pub pheromone_weight: f64,
 }
 
 impl WorldState {
@@ -199,7 +197,7 @@ impl WorldState {
 		}
 
 		for _ in 0..config.ant_count {
-			result.ants.push(Ant::new(config.pheromone_weight, config.random_choice_chance, result.graph.clone()));
+			result.ants.push(Ant::new(config.random_choice_chance, result.graph.clone()));
 		}
 
 		result.init_edges();
@@ -217,8 +215,8 @@ impl WorldState {
 					second_node: second_node.clone(),
 					length: length,
 					pheromone_strength: 0.01,
-					length_cost: if length != 0.0 { length.recip().powi(self.heuristic_weight) } else { 0.0 },
-					pheromone_cost: (0.01_f64).powi(self.pheromone_weight),
+					length_cost: if length != 0.0 { length.recip().powf(self.heuristic_weight) } else { 0.0 },
+					pheromone_cost: (0.01_f64).powf(self.pheromone_weight),
 				};
 				let hash;
 				if node.attraction_number > second_node.attraction_number {
@@ -278,7 +276,7 @@ impl WorldState {
 			for pair in ant.current_path.windows(2) {
 				let edge = self.get_edge((pair[0].clone(), pair[1].clone()));
 				edge.pheromone_strength += ant.current_distance.recip();
-				edge.pheromone_cost = edge.pheromone_strength.powi(pheromone_weight);
+				edge.pheromone_cost = edge.pheromone_strength.powf(pheromone_weight);
 			}
 		}
 	}

@@ -21,9 +21,9 @@ struct Config {
 	#[arg(long, name = "random-chance")]
 	random_choice_chance: f64,
 	#[arg(long, name = "pheromone-weight")]
-	pheromone_weight: i32,
+	pheromone_weight: f64,
 	#[arg(long, name = "heuristic-weight")]
-	heuristic_weight: i32,
+	heuristic_weight: f64,
 	#[arg(long, name = "try-count", conflicts_with = "record")]
 	try_count: Option<u32>,
 	#[arg(short, long, conflicts_with = "try-count")]
@@ -139,7 +139,7 @@ fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir
 			}
 		} else {
 			if config.bruteforce {
-				solver.do_bruteforce()
+				//solver.do_bruteforce()
 			} else {
 				solver.do_all_iterations();
 			}
