@@ -1,6 +1,5 @@
 #![allow(clippy::needless_return)]
 
-use std::collections::HashMap;
 use itertools::Itertools;
 use rand::prelude::*;
 
@@ -9,10 +8,10 @@ pub struct GraphNode {
 	pub attraction_number: u8,
 	pub x: i32,
 	pub y: i32,
-	pub demand: i32,
-	pub ready_time: i32,
-	pub due_time: i32,
-	pub service_time: i32
+	pub demand: u32,
+	pub ready_time: u32,
+	pub due_time: u32,
+	pub service_time: u32,
 }
 
 impl std::hash::Hash for GraphNode {
@@ -49,10 +48,11 @@ pub struct Ant {
 	pub random_choice_chance: f64, // less than 1
 	nodes_to_visit: Vec<GraphNode>,
 	costs: Vec<f64>,
+	pub group_id: u8,
 }
 
 impl Ant {
-	fn new(random_choice_chance: f64, nodes: Vec<GraphNode>) -> Self {
+	fn new(random_choice_chance: f64, nodes: Vec<GraphNode>, group_id: u8) -> Self {
 		return Self {
 			node_at: GraphNode { attraction_number: 0, x: 0, y: 0, demand: 0, ready_time: 0, due_time: 0, service_time: 0 }, // empty init, randomize later
 			current_path: Vec::with_capacity(nodes.len()),
@@ -60,6 +60,7 @@ impl Ant {
 			random_choice_chance,
 			costs: Vec::with_capacity(nodes.len()),
 			nodes_to_visit: nodes,
+			group_id
 		};
 	}
 	
@@ -90,12 +91,12 @@ impl Ant {
 					self.node_at = node.clone();
 					to_remove = Some(self.node_at.clone());
 				} else {
-					if data.pheromone_strength == 0.0 {
+					if data.pheromone_strengths[self.group_id as usize] == 0.0 {
 						let cost = data.length_cost;
 						self.costs.push(cost);
 						cost_sum += cost;
 					} else {
-						let cost = data.pheromone_cost * data.length_cost;
+						let cost = data.pheromone_costs[self.group_id as usize] * data.length_cost;
 						self.costs.push(cost);
 						cost_sum += cost;
 					}
@@ -138,34 +139,20 @@ impl Ant {
 pub struct EdgeData {
 	first_node: GraphNode,
 	second_node: GraphNode,
-	pheromone_strength: f64,
+	pheromone_strengths: Vec<f64>, // for multiple groups/colonies
 	length: f64,
 	length_cost: f64, // 0 if length is 0
-	pheromone_cost: f64
+	pheromone_costs: Vec<f64>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ConfigData {
-	pub ant_count: usize,
+	pub ant_count_per_vehicle: usize,
 	pub random_choice_chance: f64,
 	pub pheromone_weight: f64,
 	pub heuristic_weight: f64,
 	pub iteration_count: u32,
 	pub pheromone_evaporation_coefficient: f64,
-}
-
-#[derive(Debug, Clone)]
-pub struct SingleIterationEdgeList {
-	edges: HashMap<(GraphNode, GraphNode), f64>,
-	min_pheromones: f64,
-	max_pheromones: f64,
-}
-
-#[derive(Debug, Clone)]
-pub struct MultipleIterationGraphviz {
-	edge_lists: Vec<HashMap<(GraphNode, GraphNode), f64>>,
-	min_pheromones: f64,
-	max_pheromones: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -181,13 +168,15 @@ pub struct WorldState {
 	pub heuristic_weight: f64,
 	pub pheromone_weight: f64,
 	weight_limit: u32,
+	vehicle_count: u8,
 }
 
 impl WorldState {
 	pub fn new(input_nodes: Vec<GraphNode>, config: ConfigData, weight_limit: u32) -> Self {
+		let vehicle_count = (input_nodes.len() as f64).sqrt().round() as u8;
 		let mut result = WorldState {
 			graph: input_nodes,
-			ants: Vec::with_capacity(config.ant_count),
+			ants: Vec::with_capacity(config.ant_count_per_vehicle * (vehicle_count as usize)),
 			edges: Vec::with_capacity(0x1 << 16),
 			iteration_count: config.iteration_count,
 			pheromone_evaporation_coefficient: config.pheromone_evaporation_coefficient,
@@ -195,17 +184,21 @@ impl WorldState {
 			best_solution_length: f64::MAX,
 			heuristic_weight: config.heuristic_weight,
 			pheromone_weight: config.pheromone_weight,
-			weight_limit
+			weight_limit,
+			vehicle_count
 		};
 		unsafe {
 			result.edges.set_len(0x1 << 16);
 		}
 
-		for _ in 0..config.ant_count {
-			result.ants.push(Ant::new(config.random_choice_chance, result.graph.clone()));
+		for group in 0..vehicle_count {
+			for _ in 0..config.ant_count_per_vehicle {
+				result.ants.push(Ant::new(config.random_choice_chance, result.graph.clone(), group));
+			}
 		}
 
 		result.init_edges();
+		result.init_ants();
 
 		return result;
 	}
@@ -214,14 +207,20 @@ impl WorldState {
 		for (index, node) in self.graph.iter().enumerate() {
 			for second_node in self.graph[index + 1 ..].iter() {
 				//println!("{}, {} => {}", node.attraction_number, second_node.attraction_number, (((node.attraction_number as u16) << 8) | (second_node.attraction_number as u16)));
+				let mut pheromone_strengths = Vec::with_capacity(self.vehicle_count as usize);
+				let mut pheromone_costs = Vec::with_capacity(self.vehicle_count as usize);
+				for _ in 0..self.vehicle_count {
+					pheromone_strengths.push(0.01);
+					pheromone_costs.push((0.01_f64).powf(self.pheromone_weight));
+				}
 				let length = node.distance_to(second_node);
 				let to_insert = EdgeData {
 					first_node: node.clone(),
 					second_node: second_node.clone(),
 					length,
-					pheromone_strength: 0.01,
+					pheromone_strengths,
 					length_cost: if length != 0.0 { length.recip().powf(self.heuristic_weight) } else { 0.0 },
-					pheromone_cost: (0.01_f64).powf(self.pheromone_weight),
+					pheromone_costs,
 				};
 				let hash;
 				if node.attraction_number > second_node.attraction_number {
@@ -238,7 +237,7 @@ impl WorldState {
 		for ant in &mut self.ants {
 			ant.clear();
 			ant.nodes_to_visit = self.graph.clone();
-			ant.node_at = self.graph.choose(&mut rand::thread_rng()).unwrap().clone();
+			ant.node_at = self.graph[0];
 			ant.nodes_to_visit.swap_remove(ant.nodes_to_visit.iter().position(|x| *x == ant.node_at).unwrap());
 		}
 	}
@@ -269,9 +268,12 @@ impl WorldState {
 
 	fn update_pheromones(&mut self) {
 		// evaporate pheromones
+		let evap_coeff = self.pheromone_evaporation_coefficient;
 		for (index, node) in self.graph.clone().iter().enumerate() {
 			for second_node in self.graph.clone()[index + 1 ..].iter() {
-				self.get_edge((node.attraction_number, second_node.attraction_number)).pheromone_strength *= self.pheromone_evaporation_coefficient;
+				for group_pher in &mut self.get_edge((node.attraction_number, second_node.attraction_number)).pheromone_strengths {
+					*group_pher *= *group_pher * evap_coeff;
+				}
 			}
 		}
 
@@ -280,8 +282,8 @@ impl WorldState {
 		for ant in &self.ants.clone() {
 			for pair in ant.current_path.windows(2) {
 				let edge = self.get_edge((pair[0].clone(), pair[1].clone()));
-				edge.pheromone_strength += ant.current_distance.recip();
-				edge.pheromone_cost = edge.pheromone_strength.powf(pheromone_weight);
+				edge.pheromone_strengths[ant.group_id as usize] += ant.current_distance.recip();
+				edge.pheromone_costs[ant.group_id as usize] = edge.pheromone_strengths[ant.group_id as usize].powf(pheromone_weight);
 			}
 		}
 	}
@@ -308,45 +310,6 @@ impl WorldState {
 		for _ in 0..self.iteration_count {
 			self.do_iteration();
 		}
-	}
-
-	pub fn do_all_iterations_with_edge_recording(&mut self) -> MultipleIterationGraphviz {
-		let mut result = MultipleIterationGraphviz {
-			edge_lists: Vec::with_capacity(self.iteration_count as usize),
-			max_pheromones: f64::MIN,
-			min_pheromones: f64::MAX,
-		};
-		for _ in 0..self.iteration_count {
-			self.do_iteration();
-			let single_result = self.edge_pheromones_to_list();
-			result.edge_lists.push(single_result.edges);
-			if single_result.max_pheromones > result.max_pheromones {
-				result.max_pheromones = single_result.max_pheromones;
-			}
-			if single_result.min_pheromones < result.min_pheromones {
-				result.min_pheromones = single_result.min_pheromones;
-			}
-		}
-		return result;
-	}
-
-	pub fn do_all_iterations_with_graphviz_recording(&mut self, low_color: colorgrad::Color, high_color: colorgrad::Color) -> Vec<String> {
-		let edge_recordings = self.do_all_iterations_with_edge_recording();
-		let color_source = colorgrad::CustomGradient::new()
-			.colors(&[high_color, low_color])
-			.domain(&[edge_recordings.min_pheromones, edge_recordings.max_pheromones])
-			.build().unwrap();
-		let mut result = Vec::with_capacity(edge_recordings.edge_lists.len());
-
-		for iteration_edges in edge_recordings.edge_lists {
-			let mut iteration_edge_list = String::new();
-			for (pair, value) in iteration_edges {
-				iteration_edge_list.push_str(&format!("{} -- {} [color = \"{}\"]\n", pair.0.attraction_number, pair.1.attraction_number, color_source.at(value).to_hex_string()));
-			}
-			result.push(iteration_edge_list);
-		}
-
-		return result;
 	}
 
 	pub fn reset(&mut self) {
@@ -382,26 +345,5 @@ impl WorldState {
 			{}\
 			}}", self.best_solution_length, self.nodes_to_graphviz(), self.solution_edges_to_graphviz()
 		);
-	}
-
-	pub fn edge_pheromones_to_list(&self) -> SingleIterationEdgeList {
-		// create a graph with edges colored according to their pheromone strength
-		let mut result = SingleIterationEdgeList {
-			edges: HashMap::new(),
-			max_pheromones: f64::MIN,
-			min_pheromones: f64::MAX,
-		};
-
-		for edge in &self.edges {
-			result.edges.insert((edge.first_node.clone(), edge.second_node.clone()), edge.pheromone_strength);
-			if edge.pheromone_strength > result.max_pheromones {
-				result.max_pheromones = edge.pheromone_strength;
-			}
-			if edge.pheromone_strength < result.min_pheromones {
-				result.min_pheromones = edge.pheromone_strength;
-			}
-		}
-
-		return result;
 	}
 }

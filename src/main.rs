@@ -12,8 +12,8 @@ struct Config {
 	batch: bool, // for processing directories
 	#[arg(short, long)]
 	path: PathBuf,
-	#[arg(long, name = "ant-count")]
-	ant_count: usize,
+	#[arg(long, name = "ant-count-per-vehicle")]
+	ant_count_per_vehicle: usize,
 	#[arg(long)]
 	iterations: u32,
 	#[arg(long, name = "evaporation")]
@@ -24,16 +24,14 @@ struct Config {
 	pheromone_weight: f64,
 	#[arg(long, name = "heuristic-weight")]
 	heuristic_weight: f64,
-	#[arg(long, name = "try-count", conflicts_with = "record")]
+	#[arg(long, name = "try-count")]
 	try_count: Option<u32>,
-	#[arg(short, long, conflicts_with = "try-count")]
-	record: bool,
 }
 
 impl From<&Config> for ant_colony::ConfigData {
 	fn from(value: &Config) -> Self {
 		return Self {
-			ant_count: value.ant_count,
+			ant_count_per_vehicle: value.ant_count_per_vehicle,
 			heuristic_weight: value.heuristic_weight,
 			iteration_count: value.iterations,
 			pheromone_evaporation_coefficient: value.evaporation_coeff,
@@ -95,7 +93,7 @@ impl AddAssign<f64> for BatchRunData {
 // first trim the leading spaces from files with `cut -c 2-`
 
 // returns string that was printed before
-fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir_to_write: &PathBuf, weight_limit: u32) -> String {
+fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, weight_limit: u32) -> String {
 	let world_config = ant_colony::ConfigData::from(&config);
 	let mut solver = ant_colony::WorldState::new(nodes, world_config, weight_limit);
 	if let Some(tries) = config.try_count {
@@ -123,27 +121,7 @@ fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir
 		}).unwrap().unwrap();
 		return format!("Finished {} runs. Longest found route is {}, shortest found route is {}. The average length is {}", result.run_count, result.max_result, result.min_result, result.average);
 	} else {
-		if config.record {
-			let low_color = colorgrad::Color::from_linear_rgba(0.0, 0.0, 1.0, 1.0);
-			let high_color = colorgrad::Color::from_linear_rgba(1.0, 0.0, 0.0, 0.0);
-			let frames = solver.do_all_iterations_with_graphviz_recording(low_color, high_color);
-			let nodes = solver.nodes_to_graphviz();
-			for (index, item) in frames.iter().enumerate() {
-				let output = format!("graph frame{} {{\n\
-					layout = \"neato\"\n\
-					labelloc = \"t\"\n\
-					overlap = \"prism\"\n\
-					label = \"Frame {} of {}. Found solution is {}.\\nPositions not to scale.\"\n\
-					{}\n\n\
-					{}\n\
-					}}
-					", index, index, frames.len(), solver.best_solution_length, nodes, item
-				);
-				std::fs::write(format!("./{}/{}.dot", dir_to_write.display(), index), output).unwrap();
-			}
-		} else {
-			solver.do_all_iterations();
-		}
+		solver.do_all_iterations();
 		eprintln!("Found solution with length {}", solver.best_solution_length);
 		return format!("{}", solver.solution_to_graphviz());
 	}
@@ -173,7 +151,7 @@ fn batch_process_files(directory: &PathBuf, config: Config, weight_limits: &Hash
 	if config.try_count.is_some() {
 		// only save statistics
 		for (filename, nodes) in node_map {
-			let output = process_set_of_nodes(nodes, config.clone(), &"".into(), *weight_limits.get(Path::new(&filename).file_stem().unwrap().to_str().unwrap()).unwrap()); // won't write anything anyway
+			let output = process_set_of_nodes(nodes, config.clone(), *weight_limits.get(Path::new(&filename).file_stem().unwrap().to_str().unwrap()).unwrap()); // won't write anything anyway
 			println!("File {}: {}", filename, output);
 		}
 	} else {
@@ -186,7 +164,7 @@ fn batch_process_files(directory: &PathBuf, config: Config, weight_limits: &Hash
 			threads.push(std::thread::spawn(move || {
 				let directory = format!("{}/{}", directory.display(), filename);
 				std::fs::create_dir(format!("./{}/", directory)).unwrap();
-				let output = process_set_of_nodes(nodes, config, &directory.clone().into(), weight_limit);
+				let output = process_set_of_nodes(nodes, config, weight_limit);
 				std::fs::write(format!("./{}/solution.dot", directory), output).unwrap();
 			}));
 		}
@@ -204,7 +182,7 @@ fn main() {
 	} else {
 		let nodes = read_file(&config.path);
 		let weight_limit = *weight_limits.get(config.path.file_stem().unwrap().to_str().unwrap()).unwrap();
-		let output = process_set_of_nodes(nodes, config, &"output".into(), weight_limit);
+		let output = process_set_of_nodes(nodes, config, weight_limit);
 		println!("{}", output);
 	}
 }
