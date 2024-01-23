@@ -1,6 +1,6 @@
 #![allow(clippy::needless_return)]
 
-use std::{path::PathBuf, collections::HashMap, ops::AddAssign};
+use std::{path::{Path, PathBuf}, collections::HashMap, ops::AddAssign};
 
 use ant_colony::GraphNode;
 use clap::Parser;
@@ -95,9 +95,9 @@ impl AddAssign<f64> for BatchRunData {
 // first trim the leading spaces from files with `cut -c 2-`
 
 // returns string that was printed before
-fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir_to_write: &PathBuf) -> String {
+fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir_to_write: &PathBuf, weight_limit: u32) -> String {
 	let world_config = ant_colony::ConfigData::from(&config);
-	let mut solver = ant_colony::WorldState::new(nodes, world_config);
+	let mut solver = ant_colony::WorldState::new(nodes, world_config, weight_limit);
 	if let Some(tries) = config.try_count {
 		let tries_per_thread = (tries as usize).div_ceil(num_cpus::get());
 		let mut threads = Vec::with_capacity(num_cpus::get());
@@ -168,12 +168,12 @@ fn read_directory(path: &PathBuf) -> HashMap<String, Vec<GraphNode>> {
 	return node_map;
 }
 
-fn batch_process_files(directory: &PathBuf, config: Config) {
+fn batch_process_files(directory: &PathBuf, config: Config, weight_limits: &HashMap<String, u32>) {
 	let node_map = read_directory(&config.path);
 	if config.try_count.is_some() {
 		// only save statistics
 		for (filename, nodes) in node_map {
-			let output = process_set_of_nodes(nodes, config.clone(), &"".into()); // won't write anything anyway
+			let output = process_set_of_nodes(nodes, config.clone(), &"".into(), *weight_limits.get(Path::new(&filename).file_stem().unwrap().to_str().unwrap()).unwrap()); // won't write anything anyway
 			println!("File {}: {}", filename, output);
 		}
 	} else {
@@ -182,10 +182,11 @@ fn batch_process_files(directory: &PathBuf, config: Config) {
 		for (filename, nodes) in node_map {
 			let directory = directory.clone();
 			let config = config.clone();
+			let weight_limit = *weight_limits.get(Path::new(&filename).file_stem().unwrap().to_str().unwrap()).unwrap();
 			threads.push(std::thread::spawn(move || {
 				let directory = format!("{}/{}", directory.display(), filename);
 				std::fs::create_dir(format!("./{}/", directory)).unwrap();
-				let output = process_set_of_nodes(nodes, config, &directory.clone().into());
+				let output = process_set_of_nodes(nodes, config, &directory.clone().into(), weight_limit);
 				std::fs::write(format!("./{}/solution.dot", directory), output).unwrap();
 			}));
 		}
@@ -196,14 +197,14 @@ fn batch_process_files(directory: &PathBuf, config: Config) {
 }
 
 fn main() {
-	println!("{:#?}", read_file(&"./data/r101.csv".into()));
-	return;
 	let config = Config::parse();
+	let weight_limits: HashMap<String, u32> = serde_json::from_str(&std::fs::read_to_string("./data/capacities.json").unwrap()).unwrap();
 	if config.batch {
-		batch_process_files(&"output".into(), config);
+		batch_process_files(&"output".into(), config, &weight_limits);
 	} else {
 		let nodes = read_file(&config.path);
-		let output = process_set_of_nodes(nodes, config, &"output".into());
+		let weight_limit = *weight_limits.get(config.path.file_stem().unwrap().to_str().unwrap()).unwrap();
+		let output = process_set_of_nodes(nodes, config, &"output".into(), weight_limit);
 		println!("{}", output);
 	}
 }

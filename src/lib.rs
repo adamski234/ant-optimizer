@@ -4,11 +4,12 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use rand::prelude::*;
 
-#[derive(Debug, Clone, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialOrd, Ord, serde::Deserialize)]
 pub struct GraphNode {
 	pub attraction_number: u8,
 	pub x: i32,
 	pub y: i32,
+	pub demand: i32,
 	pub ready_time: i32,
 	pub due_time: i32,
 	pub service_time: i32
@@ -53,7 +54,7 @@ pub struct Ant {
 impl Ant {
 	fn new(random_choice_chance: f64, nodes: Vec<GraphNode>) -> Self {
 		return Self {
-			node_at: GraphNode { attraction_number: 0, x: 0, y: 0, ready_time: 0, due_time: 0, service_time: 0 }, // empty init, randomize later
+			node_at: GraphNode { attraction_number: 0, x: 0, y: 0, demand: 0, ready_time: 0, due_time: 0, service_time: 0 }, // empty init, randomize later
 			current_path: Vec::with_capacity(nodes.len()),
 			current_distance: 0.0,
 			random_choice_chance,
@@ -179,14 +180,14 @@ pub struct WorldState {
 	pub best_solution_length: f64,
 	pub heuristic_weight: f64,
 	pub pheromone_weight: f64,
+	weight_limit: u32,
 }
 
 impl WorldState {
-	pub fn new(input_nodes: Vec<GraphNode>, config: ConfigData) -> Self {
+	pub fn new(input_nodes: Vec<GraphNode>, config: ConfigData, weight_limit: u32) -> Self {
 		let mut result = WorldState {
 			graph: input_nodes,
 			ants: Vec::with_capacity(config.ant_count),
-			//edges: fnv::FnvHashMap::with_capacity_and_hasher(attraction_count * (attraction_count - 1) / 2, Default::default()), // holds exactly as many edges as required
 			edges: Vec::with_capacity(0x1 << 16),
 			iteration_count: config.iteration_count,
 			pheromone_evaporation_coefficient: config.pheromone_evaporation_coefficient,
@@ -194,6 +195,7 @@ impl WorldState {
 			best_solution_length: f64::MAX,
 			heuristic_weight: config.heuristic_weight,
 			pheromone_weight: config.pheromone_weight,
+			weight_limit
 		};
 		unsafe {
 			result.edges.set_len(0x1 << 16);
@@ -216,7 +218,7 @@ impl WorldState {
 				let to_insert = EdgeData {
 					first_node: node.clone(),
 					second_node: second_node.clone(),
-					length: length,
+					length,
 					pheromone_strength: 0.01,
 					length_cost: if length != 0.0 { length.recip().powf(self.heuristic_weight) } else { 0.0 },
 					pheromone_cost: (0.01_f64).powf(self.pheromone_weight),
