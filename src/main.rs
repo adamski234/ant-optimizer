@@ -1,6 +1,6 @@
 #![allow(clippy::needless_return)]
 
-use std::{path::PathBuf, collections::HashMap};
+use std::{path::PathBuf, collections::HashMap, ops::AddAssign};
 
 use ant_colony::GraphNode;
 use clap::Parser;
@@ -28,8 +28,6 @@ struct Config {
 	try_count: Option<u32>,
 	#[arg(short, long, conflicts_with = "try-count")]
 	record: bool,
-	#[arg(long)]
-	bruteforce: bool, // if it's set ignore everything (other params still required) and spit out the optimal solution found using a brute force algo
 }
 
 impl From<&Config> for ant_colony::ConfigData {
@@ -61,20 +59,11 @@ impl BatchRunData {
 			run_count: 0,
 		};
 	}
+}
 
-	fn add_run(&mut self, result: f64) {
-		if result > self.max_result {
-			self.max_result = result;
-		}
-		if result < self.min_result {
-			self.min_result = result;
-		}
-		let previous_sum = self.average * self.run_count as f64;
-		self.run_count += 1;
-		self.average = (previous_sum + result) / self.run_count as f64;
-	}
 
-	fn add_batch(&mut self, other: Self) {
+impl AddAssign for BatchRunData {
+	fn add_assign(&mut self, other: Self) {
 		if other.max_result > self.max_result {
 			self.max_result = other.max_result;
 		}
@@ -85,6 +74,21 @@ impl BatchRunData {
 		let other_sum = other.average * other.run_count as f64;
 		self.run_count += other.run_count;
 		self.average = (self_sum + other_sum) / self.run_count as f64;
+	}
+}
+
+impl AddAssign<f64> for BatchRunData {
+	fn add_assign(&mut self, rhs: f64) {
+		if rhs > self.max_result {
+			self.max_result = rhs;
+		}
+		if rhs < self.min_result {
+			self.min_result = rhs;
+		}
+		let previous_sum = self.average * self.run_count as f64;
+		self.run_count += 1;
+		self.average = (previous_sum + rhs) / self.run_count as f64;
+		
 	}
 }
 
@@ -103,7 +107,7 @@ fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir
 				let mut run_stats = BatchRunData::new();
 				for _ in 0..tries_per_thread {
 					thread_solver.do_all_iterations();
-					run_stats.add_run(thread_solver.best_solution_length);
+					run_stats += thread_solver.best_solution_length;
 					thread_solver.reset();
 				}
 				return run_stats;
@@ -114,7 +118,7 @@ fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir
 			return handle.join();
 		}).reduce(|a, b| {
 			let mut batch = a.unwrap();
-			batch.add_batch(b.unwrap());
+			batch += b.unwrap();
 			return Ok(batch);
 		}).unwrap().unwrap();
 		return format!("Finished {} runs. Longest found route is {}, shortest found route is {}. The average length is {}", result.run_count, result.max_result, result.min_result, result.average);
@@ -138,11 +142,7 @@ fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, dir
 				std::fs::write(format!("./{}/{}.dot", dir_to_write.display(), index), output).unwrap();
 			}
 		} else {
-			if config.bruteforce {
-				//solver.do_bruteforce()
-			} else {
-				solver.do_all_iterations();
-			}
+			solver.do_all_iterations();
 		}
 		eprintln!("Found solution with length {}", solver.best_solution_length);
 		return format!("{}", solver.solution_to_graphviz());
@@ -196,6 +196,8 @@ fn batch_process_files(directory: &PathBuf, config: Config) {
 }
 
 fn main() {
+	println!("{:#?}", read_file(&"./data/r101.csv".into()));
+	return;
 	let config = Config::parse();
 	if config.batch {
 		batch_process_files(&"output".into(), config);

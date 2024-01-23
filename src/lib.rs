@@ -8,7 +8,10 @@ use rand::prelude::*;
 pub struct GraphNode {
 	pub attraction_number: u8,
 	pub x: i32,
-	pub y: i32
+	pub y: i32,
+	pub ready_time: i32,
+	pub due_time: i32,
+	pub service_time: i32
 }
 
 impl std::hash::Hash for GraphNode {
@@ -50,7 +53,7 @@ pub struct Ant {
 impl Ant {
 	fn new(random_choice_chance: f64, nodes: Vec<GraphNode>) -> Self {
 		return Self {
-			node_at: GraphNode { attraction_number: 0, x: 0, y: 0 }, // empty init, randomize later
+			node_at: GraphNode { attraction_number: 0, x: 0, y: 0, ready_time: 0, due_time: 0, service_time: 0 }, // empty init, randomize later
 			current_path: Vec::with_capacity(nodes.len()),
 			current_distance: 0.0,
 			random_choice_chance,
@@ -398,19 +401,5 @@ impl WorldState {
 		}
 
 		return result;
-	}
-
-	pub fn do_bruteforce(&mut self) {
-		// it's not supposed to be quick but it has to create a solution
-		for solution in self.graph.clone().into_iter().permutations(self.graph.len()).unique() {
-			let mut sum = 0.0;
-			for pair in solution.windows(2) {
-				sum += self.get_edge((pair[0].attraction_number, pair[1].attraction_number)).length;
-			}
-			if sum < self.best_solution_length {
-				self.best_solution_length = sum;
-				self.best_solution = solution;
-			}
-		}
 	}
 }
