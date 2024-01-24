@@ -114,15 +114,15 @@ impl Ant {
 					was_any_node_available_other_colonies = true;
 					break;
 				}
-				if !was_any_node_available_cargo {
-					return Err(AntError::CargoFull);
-				}
-				if !was_any_node_available_time {
-					return Err(AntError::OutOfTime);
-				}
-				if !was_any_node_available_other_colonies {
-					return Err(AntError::AllNodesUsedByOtherColonies);
-				}
+			}
+			if !was_any_node_available_cargo {
+				return Err(AntError::CargoFull);
+			}
+			if !was_any_node_available_time {
+				return Err(AntError::OutOfTime);
+			}
+			if !was_any_node_available_other_colonies {
+				return Err(AntError::AllNodesUsedByOtherColonies);
 			}
 
 			for node in &mut self.nodes_to_visit {
@@ -159,6 +159,12 @@ impl Ant {
 			}
 			if let Some(node) = to_remove {
 				self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &node).unwrap());
+				for (index, visitables) in world.visitable_nodes.iter_mut().enumerate() {
+					if index == self.group_id as usize {
+						continue;
+					}
+					visitables.swap_remove(self.nodes_to_visit.iter().position(|x| *x == node).unwrap());
+				}
 				return Ok(());
 			}
 			
@@ -183,6 +189,12 @@ impl Ant {
 		self.node_at = next_node;
 		self.time += edge.length + next_node.service_time as f64;
 		self.cargo_so_far += next_node.demand;
+		for (index, visitables) in world.visitable_nodes.iter_mut().enumerate() {
+			if index == self.group_id as usize {
+				continue;
+			}
+			visitables.swap_remove(self.nodes_to_visit.iter().position(|x| *x == next_node).unwrap());
+		}
 
 		return Ok(());
 	}
@@ -227,7 +239,7 @@ pub struct WorldState {
 	pub pheromone_weight: f64,
 	weight_limit: u32,
 	vehicle_count: u8,
-	visitable_nodes: Vec<Vec<u8>>, // group id is first index. TODO check if move is legal, remove node if visited
+	visitable_nodes: Vec<Vec<u8>>, // group id is first index
 }
 
 impl WorldState {
