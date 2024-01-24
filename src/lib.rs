@@ -1,7 +1,7 @@
 #![allow(clippy::needless_return)]
 
 // TODO how do you store solutions? Update them?
-// TODO include time in cost calculation
+// TODO color solutions
 
 use itertools::Itertools;
 use rand::prelude::*;
@@ -57,10 +57,11 @@ pub struct Ant {
 	pub group_id: u8,
 	time: f64,
 	cargo_so_far: u32, // cargo lost so far - no partial deliveries
+	time_weight: f64,
 }
 
 impl Ant {
-	fn new(random_choice_chance: f64, nodes: Vec<GraphNode>, group_id: u8) -> Self {
+	fn new(random_choice_chance: f64, nodes: Vec<GraphNode>, group_id: u8, time_weight: f64) -> Self {
 		return Self {
 			node_at: GraphNode { attraction_number: 0, x: 0, y: 0, demand: 0, ready_time: 0, due_time: 0, service_time: 0 }, // empty init, randomize later
 			current_path: Vec::with_capacity(nodes.len()),
@@ -70,7 +71,8 @@ impl Ant {
 			nodes_to_visit: nodes,
 			group_id,
 			time: 0.0,
-			cargo_so_far: 0
+			cargo_so_far: 0,
+			time_weight,
 		};
 	}
 	
@@ -142,6 +144,7 @@ impl Ant {
 					// check if there is weight left
 					continue;
 				}
+				let arrive_time = if self.time + data.length > node.ready_time as f64 { self.time + data.length } else { node.ready_time as f64};
 				if data.length == 0.0 {
 					// zero distance means we jump straight there and ignore every other possibility
 					// removes a node at no cost and it is always the most optimal solution
@@ -149,15 +152,16 @@ impl Ant {
 					self.current_path.push(self.node_at.attraction_number);
 					self.node_at = node.clone();
 					to_remove = Some(self.node_at.clone());
-					self.time += if self.time + data.length > node.ready_time as f64 { data.length } else { node.ready_time as f64} + node.service_time as f64;
+					self.time += arrive_time + node.service_time as f64;
 					self.cargo_so_far += node.demand;
 				} else {
+					let time_cost = (1.0 - (arrive_time - self.time) / (node.due_time as f64 - self.time)).powf(self.time_weight);
 					if data.pheromone_strengths[self.group_id as usize] == 0.0 {
-						let cost = data.length_cost;
+						let cost = data.length_cost * time_cost;
 						self.costs.push(cost);
 						cost_sum += cost;
 					} else {
-						let cost = data.pheromone_costs[self.group_id as usize] * data.length_cost;
+						let cost = data.pheromone_costs[self.group_id as usize] * data.length_cost * time_cost;
 						self.costs.push(cost);
 						cost_sum += cost;
 					}
@@ -229,6 +233,7 @@ pub struct ConfigData {
 	pub heuristic_weight: f64,
 	pub iteration_count: u32,
 	pub pheromone_evaporation_coefficient: f64,
+	pub time_weight: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -243,6 +248,7 @@ pub struct WorldState {
 	pub best_solution_length: f64,
 	pub heuristic_weight: f64,
 	pub pheromone_weight: f64,
+	pub time_weight: f64,
 	weight_limit: u32,
 	vehicle_count: u8,
 	visitable_nodes: Vec<Vec<u8>>, // group id is first index
@@ -264,6 +270,7 @@ impl WorldState {
 			best_solution_length: f64::MAX,
 			heuristic_weight: config.heuristic_weight,
 			pheromone_weight: config.pheromone_weight,
+			time_weight: config.time_weight,
 			weight_limit,
 			vehicle_count,
 			visitable_nodes,
@@ -274,7 +281,7 @@ impl WorldState {
 
 		for group in 0..vehicle_count {
 			for _ in 0..config.ant_count_per_vehicle {
-				result.ants.push(Ant::new(config.random_choice_chance, result.graph.clone(), group));
+				result.ants.push(Ant::new(config.random_choice_chance, result.graph.clone(), group, config.time_weight));
 			}
 		}
 

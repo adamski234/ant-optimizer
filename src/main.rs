@@ -26,6 +26,8 @@ struct Config {
 	heuristic_weight: f64,
 	#[arg(long, name = "try-count")]
 	try_count: Option<u32>,
+	#[arg(long, name = "time-weight")]
+	time_weight: f64,
 }
 
 impl From<&Config> for ant_colony::ConfigData {
@@ -37,6 +39,7 @@ impl From<&Config> for ant_colony::ConfigData {
 			pheromone_evaporation_coefficient: value.evaporation_coeff,
 			pheromone_weight: value.pheromone_weight,
 			random_choice_chance: value.random_choice_chance,
+			time_weight: value.time_weight,
 		};
 	}
 }
