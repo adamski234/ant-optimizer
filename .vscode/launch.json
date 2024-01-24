@@ -1,0 +1,110 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug executable 'stat_collector'",
+			"cargo": {
+				"args": [
+					"build",
+					"--bin=stat_collector",
+					"--package=stat_collector"
+				],
+				"filter": {
+					"name": "stat_collector",
+					"kind": "bin"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in executable 'stat_collector'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--bin=stat_collector",
+					"--package=stat_collector"
+				],
+				"filter": {
+					"name": "stat_collector",
+					"kind": "bin"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in library 'ant_colony'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--lib",
+					"--package=ant_colony"
+				],
+				"filter": {
+					"name": "ant_colony",
+					"kind": "lib"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug executable 'ant_colony'",
+			"cargo": {
+				"args": [
+					"build",
+					"--bin=ant_colony",
+					"--package=ant_colony",
+				],
+				"filter": {
+					"name": "ant_colony",
+					"kind": "bin"
+				}
+			},
+			"args": [
+				"--path", "data/c101.csv",
+				"--ant-count-per-vehicle", "2",
+				"--iterations", "1",
+				"--evaporation-coeff", "0.5",
+				"--random-choice-chance", "0",
+				"--pheromone-weight", "0.9",
+				"--heuristic-weight", "0.9",
+				"--time-weight", "0.6"
+			],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in executable 'ant_colony'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--bin=ant_colony",
+					"--package=ant_colony"
+				],
+				"filter": {
+					"name": "ant_colony",
+					"kind": "bin"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		}
+	]
+}

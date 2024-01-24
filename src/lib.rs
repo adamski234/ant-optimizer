@@ -104,16 +104,16 @@ impl Ant {
 				if (self.time + data.length + node.service_time as f64) < node.due_time as f64 {
 					// check if there is time left
 					was_any_node_available_time = true;
-					break;
 				}
 				if self.cargo_so_far + node.demand < weight_limit {
 					// check if there is weight left
 					was_any_node_available_cargo = true;
-					break;
 				}
 				if world.visitable_nodes[self.group_id as usize].contains(&node.attraction_number) {
 					// check if other colony did not grab the node first
 					was_any_node_available_other_colonies = true;
+				}
+				if was_any_node_available_cargo && was_any_node_available_other_colonies && was_any_node_available_time {
 					break;
 				}
 			}
@@ -173,8 +173,8 @@ impl Ant {
 						continue;
 					}
 					if let Some(index) = visitables.iter().position(|x| *x == node.attraction_number) {
-				visitables.swap_remove(index);
-			}
+						visitables.swap_remove(index);
+					}
 				}
 				return Ok(());
 			}
@@ -261,8 +261,9 @@ pub struct WorldState {
 impl WorldState {
 	pub fn new(input_nodes: Vec<GraphNode>, config: ConfigData, weight_limit: u32, vehicle_count: u8) -> Self {
 		let mut visitable_nodes = Vec::with_capacity(vehicle_count as usize);
-		for _ in 0..vehicle_count {
+		for group_id in 0..vehicle_count {
 			visitable_nodes.push(input_nodes.iter().map(|x| x.attraction_number).collect_vec());
+			visitable_nodes[group_id as usize].swap_remove(0);
 		}
 		let mut result = WorldState {
 			graph: input_nodes,
@@ -283,8 +284,8 @@ impl WorldState {
 			result.edges.set_len(0x1 << 16);
 		}
 
-		for group in 0..vehicle_count {
-			for _ in 0..config.ant_count_per_vehicle {
+		for _ in 0..config.ant_count_per_vehicle {
+			for group in 0..vehicle_count {
 				result.ants.push(Ant::new(config.random_choice_chance, result.graph.clone(), group, config.time_weight));
 			}
 		}
@@ -332,7 +333,6 @@ impl WorldState {
 			ant.node_at = self.graph[0];
 			ant.nodes_to_visit.swap_remove(ant.nodes_to_visit.iter().position(|x| *x == ant.node_at).unwrap());
 		}
-		self.ants.shuffle(&mut thread_rng()); // prevents all ants from a single group from eating up all the nodes
 	}
 
 	fn get_edge(&mut self, pair: (u8, u8)) -> &mut EdgeData {
@@ -350,11 +350,33 @@ impl WorldState {
 		let mut random_source = rand::thread_rng();
 		let mut temp = self.ants.clone(); // evil clone to get around the borrow checker
 		for ant in &mut temp {
-			while ant.move_ant(self, &mut random_source).is_ok() {
-				//
+			loop {
+				let result = ant.move_ant(self, &mut random_source);
+				match result {
+					Ok(()) => {}
+					Err(AntError::OutOfTime) => {
+						eprintln!("ant out of time in colony {}", ant.group_id);
+						break;
+					}
+					Err(AntError::CargoFull) => {
+						eprintln!("ant out of cargo space in colony {}", ant.group_id);
+						break;
+					}
+					Err(AntError::AllNodesUsedByOtherColonies) => {
+						eprintln!("ant out of untaken nodes in colony {}", ant.group_id);
+						break;
+					}
+					Err(AntError::NoNodesLeft) => {
+						eprintln!("ant out of nodes to visit in colony {}", ant.group_id);
+						break;
+					}
+				}
 			}
 			ant.current_path.push(ant.node_at.attraction_number);
 			ant.current_distance += self.get_edge((ant.current_path[ant.current_path.len() - 1].clone(), ant.node_at.attraction_number)).length;
+			ant.current_path.push(self.graph[0].attraction_number);
+			ant.node_at = self.graph[0];
+			ant.current_distance += self.get_edge((ant.current_path[ant.current_path.len() - 1], ant.node_at.attraction_number)).length;
 		}
 		self.ants = temp;
 	}
@@ -373,8 +395,11 @@ impl WorldState {
 		// add pheromones
 		let pheromone_weight = self.pheromone_weight;
 		for ant in &self.ants.clone() {
+			if ant.current_path.len() == 2 {
+				continue;
+			}
 			for pair in ant.current_path.windows(2) {
-				let edge = self.get_edge((pair[0].clone(), pair[1].clone()));
+				let edge = self.get_edge((pair[0], pair[1]));
 				edge.pheromone_strengths[ant.group_id as usize] += ant.current_distance.recip();
 				edge.pheromone_costs[ant.group_id as usize] = edge.pheromone_strengths[ant.group_id as usize].powf(pheromone_weight);
 			}
@@ -391,7 +416,7 @@ impl WorldState {
 			let mut best_route = Vec::new();
 			let mut best_route_length = f64::MAX;
 			for ant in &self.ants {
-				if ant.group_id == vehicle_id && ant.current_distance < best_route_length {
+				if ant.group_id == vehicle_id && ant.current_path.len() > 2 && ant.current_distance < best_route_length {
 					best_route_length = ant.current_distance;
 					best_route = ant.current_path.iter().map(|x| {
 						return self.graph[*x as usize].clone();
@@ -410,12 +435,19 @@ impl WorldState {
 		self.move_ants();
 		self.update_pheromones();
 		self.update_best_solution();
+		for ant in &self.ants {
+			println!("colony {} length {}", ant.group_id, ant.current_distance);
+		}
 	}
 
-	pub fn do_all_iterations(&mut self) {
+	pub fn do_all_iterations(&mut self) -> Result<(), ()> {
 		for _ in 0..self.iteration_count {
 			self.do_iteration();
+			if self.best_solution_length == 0.0 {
+				return Err(());
+			}
 		}
+		return Ok(());
 	}
 
 	pub fn reset(&mut self) {
@@ -425,6 +457,7 @@ impl WorldState {
 		self.best_solution_length = f64::MAX;
 		for group_list in &mut self.visitable_nodes { // restart the lists of visitable nodes by each group
 			*group_list = self.graph.iter_mut().map(|x| x.attraction_number).collect_vec();
+			group_list.swap_remove(0);
 		}
 	}
 
