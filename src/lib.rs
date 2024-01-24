@@ -333,22 +333,30 @@ impl WorldState {
 		return result;
 	}
 
-	pub fn solution_edges_to_graphviz(&self) -> String {
+	pub fn solution_edges_to_graphviz(&self) -> (String, u32) {
 		let mut result = String::new();
+		let color_generator = random_color::RandomColor::new();
+		let mut color = color_generator.to_hex();
+		let mut car_count = 0;
 		for pair in self.best_solution.windows(2) {
-			result.push_str(&format!("{} -> {}\n", pair[0].attraction_number, pair[1].attraction_number));
+			result.push_str(&format!("{} -> {} [color = \"{}\"]\n", pair[0].attraction_number, pair[1].attraction_number, color));
+			if pair[1].attraction_number == 0 {
+				color = color_generator.to_hex();
+				car_count += 1;
+			}
 		}
-		return result;
+		return (result, car_count);
 	}
 
 	pub fn solution_to_graphviz(&self) -> String {
+		let (edges, cars) = self.solution_edges_to_graphviz();
 		return format!("digraph D {{\n\
 			layout = \"neato\"\n\
 			labelloc = \"t\"\n\
-			label = \"Solution length is {}\"\n\
+			label = \"Solution length is {}, with {} cars\"\n\
 			{}\n\n\
 			{}\
-			}}", self.best_solution_length, self.nodes_to_graphviz(), self.solution_edges_to_graphviz()
+			}}", self.best_solution_length, cars, self.nodes_to_graphviz(), edges
 		);
 	}
 }

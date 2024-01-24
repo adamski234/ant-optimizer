@@ -29,7 +29,7 @@ struct Config {
 	try_count: Option<u32>,
 	#[arg(long = "time-weight")]
 	time_weight: f64,
-	#[arg(long = "arr-out", conflicts_with = "try-count", conflicts_with = "batch")]
+	#[arg(long = "arr-out", conflicts_with = "try_count", conflicts_with = "batch")]
 	array_output: bool
 }
 
