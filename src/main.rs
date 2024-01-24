@@ -4,6 +4,7 @@ use std::{path::{Path, PathBuf}, collections::HashMap, ops::AddAssign};
 
 use ant_colony::GraphNode;
 use clap::Parser;
+use itertools::Itertools;
 
 
 #[derive(Parser, Clone)]
@@ -12,22 +13,24 @@ struct Config {
 	batch: bool, // for processing directories
 	#[arg(short, long)]
 	path: PathBuf,
-	#[arg(long, name = "ant-count")]
+	#[arg(long = "ant-count")]
 	ant_count: usize,
 	#[arg(long)]
 	iterations: u32,
-	#[arg(long, name = "evaporation")]
+	#[arg(long = "evaporation")]
 	evaporation_coeff: f64,
-	#[arg(long, name = "random-chance")]
+	#[arg(long = "random-chance")]
 	random_choice_chance: f64,
-	#[arg(long, name = "pheromone-weight")]
+	#[arg(long = "pheromone-weight")]
 	pheromone_weight: f64,
-	#[arg(long, name = "heuristic-weight")]
+	#[arg(long = "heuristic-weight")]
 	heuristic_weight: f64,
-	#[arg(long, name = "try-count")]
+	#[arg(long = "try-count")]
 	try_count: Option<u32>,
-	#[arg(long, name = "time-weight")]
+	#[arg(long = "time-weight")]
 	time_weight: f64,
+	#[arg(long = "arr-out", conflicts_with = "try-count", conflicts_with = "batch")]
+	array_output: bool
 }
 
 impl From<&Config> for ant_colony::ConfigData {
@@ -126,7 +129,11 @@ fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, wei
 	} else {
 		solver.do_all_iterations();
 		eprintln!("Found solution with length {}", solver.best_solution_length);
-		return format!("{}", solver.solution_to_graphviz());
+		if config.array_output {
+			return format!("{}", solver.best_solution.split(|x| x.attraction_number == 0).map(|x| x.iter().map(|entry| entry.attraction_number).join(" ")).skip(1).join("\n"));
+		} else {
+			return format!("{}", solver.solution_to_graphviz());
+		}
 	}
 }
 
@@ -143,6 +150,9 @@ fn read_directory(path: &PathBuf) -> HashMap<String, Vec<GraphNode>> {
 	let mut node_map = HashMap::new();
 	for file in std::fs::read_dir(path).unwrap() {
 		let file = file.unwrap();
+		if file.path().extension().unwrap() != "csv" {
+			continue;
+		}
 		let nodes = read_file(&file.path());
 		node_map.insert(file.file_name().into_string().unwrap(), nodes);
 	}
