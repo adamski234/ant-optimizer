@@ -12,8 +12,8 @@ struct Config {
 	batch: bool, // for processing directories
 	#[arg(short, long)]
 	path: PathBuf,
-	#[arg(long, name = "ant-count-per-vehicle")]
-	ant_count_per_vehicle: usize,
+	#[arg(long, name = "ant-count")]
+	ant_count: usize,
 	#[arg(long)]
 	iterations: u32,
 	#[arg(long, name = "evaporation")]
@@ -33,7 +33,7 @@ struct Config {
 impl From<&Config> for ant_colony::ConfigData {
 	fn from(value: &Config) -> Self {
 		return Self {
-			ant_count_per_vehicle: value.ant_count_per_vehicle,
+			ant_count: value.ant_count,
 			heuristic_weight: value.heuristic_weight,
 			iteration_count: value.iterations,
 			pheromone_evaporation_coefficient: value.evaporation_coeff,
@@ -98,8 +98,7 @@ impl AddAssign<f64> for BatchRunData {
 // returns string that was printed before
 fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, weight_limit: u32) -> String {
 	let world_config = ant_colony::ConfigData::from(&config);
-	let vehicle_count = 30; //(nodes.len() as f64).sqrt().round() as u8 * 3; // TODO variable amount of vehicles
-	let mut solver = ant_colony::WorldState::new(nodes, world_config, weight_limit, vehicle_count);
+	let mut solver = ant_colony::WorldState::new(nodes, world_config, weight_limit);
 	if let Some(tries) = config.try_count {
 		let tries_per_thread = (tries as usize).div_ceil(num_cpus::get());
 		let mut threads = Vec::with_capacity(num_cpus::get());
