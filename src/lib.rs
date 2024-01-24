@@ -1,6 +1,5 @@
 #![allow(clippy::needless_return)]
 
-// TODO how do you store solutions? Update them?
 // TODO color solutions
 
 use itertools::Itertools;
@@ -129,7 +128,7 @@ impl Ant {
 			}
 
 			for node in &mut self.nodes_to_visit {
-				if world.visitable_nodes[self.group_id as usize].contains(&node.attraction_number) {
+				if !world.visitable_nodes[self.group_id as usize].contains(&node.attraction_number) {
 					// check if other colony did not grab the node first
 					continue;
 				}
@@ -173,7 +172,9 @@ impl Ant {
 					if index == self.group_id as usize {
 						continue;
 					}
-					visitables.swap_remove(self.nodes_to_visit.iter().position(|x| *x == node).unwrap());
+					if let Some(index) = visitables.iter().position(|x| *x == node.attraction_number) {
+				visitables.swap_remove(index);
+			}
 				}
 				return Ok(());
 			}
@@ -199,11 +200,15 @@ impl Ant {
 		self.node_at = next_node;
 		self.time += if self.time + edge.length > next_node.ready_time as f64 { edge.length } else { next_node.ready_time as f64} + next_node.service_time as f64;
 		self.cargo_so_far += next_node.demand;
+
+		// remove visited node from visitable for other colonies
 		for (index, visitables) in world.visitable_nodes.iter_mut().enumerate() {
 			if index == self.group_id as usize {
 				continue;
 			}
-			visitables.swap_remove(self.nodes_to_visit.iter().position(|x| *x == next_node).unwrap());
+			if let Some(index) = visitables.iter().position(|x| *x == next_node.attraction_number) {
+				visitables.swap_remove(index);
+			}
 		}
 
 		return Ok(());
@@ -349,7 +354,7 @@ impl WorldState {
 				//
 			}
 			ant.current_path.push(ant.node_at.attraction_number);
-			ant.current_distance += self.get_edge((ant.current_path[ant.current_path.len() - 2].clone(), ant.node_at.attraction_number)).length;
+			ant.current_distance += self.get_edge((ant.current_path[ant.current_path.len() - 1].clone(), ant.node_at.attraction_number)).length;
 		}
 		self.ants = temp;
 	}
