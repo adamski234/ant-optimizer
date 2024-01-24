@@ -76,7 +76,7 @@ impl Ant {
 		};
 	}
 	
-	fn move_ant(&mut self, world: &mut WorldState, random_source: &mut ThreadRng) -> Result<(), AntError> {
+	fn move_ant(&mut self, world: &mut WorldState, random_source: &mut ThreadRng, deterministic: bool) -> Result<(), AntError> {
 		self.costs.clear();
 
 		// we're done
@@ -142,7 +142,7 @@ impl Ant {
 			let arrive_time = if self.time + data.length > node.ready_time as f64 { self.time + data.length } else { node.ready_time as f64 };
 			if arrive_time > node.due_time as f64 {
 				// check if there is time left
-				eprintln!("TIME {} after {:?} at {}, due time is {}", self.time, self.current_path, self.node_at.attraction_number, node.due_time);
+				//eprintln!("TIME {} after {:?} at {}, due time is {}", self.time, self.current_path, self.node_at.attraction_number, node.due_time);
 				continue;
 			}
 			if self.cargo_so_far + node.demand > weight_limit {
@@ -150,8 +150,8 @@ impl Ant {
 				continue;
 			}
 			// there are no zero length edges
-			let time_cost = ((arrive_time - self.time) / (node.due_time as f64 - self.time)).powf(self.time_weight);
-			eprintln!("time cost is {}, for self.time = {}, arrive_time = {}, node.due_time = {}", time_cost, self.time, arrive_time, node.due_time);
+			let time_cost = (node.ready_time as f64).recip().powf(self.time_weight); //(arrive_time - self.time as f64).powf(self.time_weight); //((arrive_time - self.time) / (node.due_time as f64 - self.time)).powf(self.time_weight);
+			//eprintln!("time cost is {}, for self.time = {}, arrive_time = {}, node.due_time = {}", time_cost, self.time, arrive_time, node.due_time);
 			if data.pheromone_strengths[self.group_id as usize] == 0.0 {
 				let cost = data.length_cost * time_cost;
 				self.costs.push(cost);
@@ -169,28 +169,34 @@ impl Ant {
 			return Err(AntError::IDoNotKnow);
 		}
 
-		if random_source.gen::<f64>() < self.random_choice_chance {
-		// roulette selection
-			let number_to_match = random_source.gen::<f64>() * cost_sum;
-			let mut cost_so_far = 0.0;
-			let mut node_index = 0;
-			for (index, item) in self.costs.iter().enumerate() {
-				cost_so_far += item;
-				if cost_so_far > number_to_match {
-					node_index = index;
-					break;
-				}
-			}
-			next_node = *can_visit[node_index];
+		if deterministic {
+			can_visit.sort_unstable_by_key(|x| x.ready_time);
+			next_node = *can_visit[0];
 		} else {
-			next_node = **can_visit.choose(random_source).unwrap();
+			if random_source.gen::<f64>() > self.random_choice_chance {
+				// roulette selection
+				eprintln!("rouletting");
+				let number_to_match = random_source.gen::<f64>() * cost_sum;
+				let mut cost_so_far = 0.0;
+				let mut node_index = 0;
+				for (index, item) in self.costs.iter().enumerate() {
+					cost_so_far += item;
+					if cost_so_far > number_to_match {
+						node_index = index;
+						break;
+					}
+				}
+				next_node = *can_visit[node_index];
+			} else {
+				next_node = **can_visit.choose(random_source).unwrap();
+			}
 		}
 		let edge = world.get_edge((self.node_at.attraction_number, next_node.attraction_number));
 		self.current_path.push(self.node_at.attraction_number);
 		self.current_distance += edge.length;
 		self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &next_node).unwrap());
 		self.node_at = next_node;
-		eprintln!("edgelen: {}", edge.length);
+		//eprintln!("edgelen: {}", edge.length);
 		self.time += if self.time + edge.length > next_node.ready_time as f64 { edge.length } else { next_node.ready_time as f64 - self.time} + next_node.service_time as f64;
 		self.cargo_so_far += next_node.demand;
 
@@ -318,6 +324,9 @@ impl WorldState {
 			ant.nodes_to_visit = self.graph.clone();
 			ant.node_at = self.graph[0];
 			ant.nodes_to_visit.swap_remove(ant.nodes_to_visit.iter().position(|x| *x == ant.node_at).unwrap());
+			for group_list in &mut self.visited_nodes {
+				group_list.clear();
+			}
 		}
 	}
 
@@ -332,32 +341,32 @@ impl WorldState {
 	}
 
 	// moves ants until they're all done
-	fn move_ants(&mut self) {
+	fn move_ants(&mut self, deterministic: bool) {
 		let mut random_source = rand::thread_rng();
 		let mut temp = self.ants.clone(); // evil clone to get around the borrow checker
 		loop {
 			let mut anything_changed = false;
 			for ant in &mut temp {
-				let result = ant.move_ant(self, &mut random_source);
+				let result = ant.move_ant(self, &mut random_source, deterministic);
 				//eprintln!("after move ant is at time {}", ant.time);
 				match result {
 					Ok(()) => {
 						anything_changed = true;
 					}
 					Err(AntError::OutOfTime) => {
-						eprintln!("ant out of time in colony {}", ant.group_id);
+						//eprintln!("ant out of time in colony {}", ant.group_id);
 					}
 					Err(AntError::CargoFull) => {
-						eprintln!("ant out of cargo space in colony {}", ant.group_id);
+						//eprintln!("ant out of cargo space in colony {}", ant.group_id);
 					}
 					Err(AntError::AllNodesUsedByOtherColonies) => {
-						eprintln!("ant out of untaken nodes in colony {}", ant.group_id);
+						//eprintln!("ant out of untaken nodes in colony {}", ant.group_id);
 					}
 					Err(AntError::NoNodesLeft) => {
-						eprintln!("ant out of nodes to visit in colony {}", ant.group_id);
+						//eprintln!("ant out of nodes to visit in colony {}", ant.group_id);
 					}
 					Err(AntError::IDoNotKnow) => {
-						eprintln!("things happened");
+						//eprintln!("things happened");
 					}
 				}
 			}
@@ -403,9 +412,9 @@ impl WorldState {
 	fn update_best_solution(&mut self) {
 		// colonies have mutually exclusive routes - will never overlap nodes
 		// find ant with best route in each colony
-		eprintln!("{:#?}", self.ants.iter().map(|x| {
+		/*eprintln!("{:#?}", self.ants.iter().map(|x| {
 			return (x.group_id, x.current_distance, &x.current_path);
-		}).collect_vec());
+		}).collect_vec());*/
 		let mut best_routes = Vec::with_capacity(self.vehicle_count as usize);
 		let mut best_route_lengths = Vec::with_capacity(self.vehicle_count as usize);
 
@@ -424,20 +433,40 @@ impl WorldState {
 			best_route_lengths.push(best_route_length);
 		}
 
-		self.best_solution_length = best_route_lengths.into_iter().reduce(|acc, item| acc + item).unwrap();
-		self.best_solution = best_routes;
+		/*for (index, path) in best_routes.iter().enumerate() {
+			eprintln!("colony {} with path {:?}", index, path.iter().map(|x| x.attraction_number).collect_vec());
+		}*/
+
+		// Check if the best route candidates handle all the nodes when combined together, before actually updating the best solution
+		let mut all_nodes = Vec::with_capacity(self.graph.len());
+		for node in &self.graph {
+			all_nodes.push(node.attraction_number);
+		}
+		for route in &best_routes {
+			for node in route {
+				//eprintln!("Removing {}", node.attraction_number);
+				if let Some(i) = all_nodes.iter().position(|x| x == &node.attraction_number) {
+					all_nodes.swap_remove(i);
+				}
+			}
+		}
+		if all_nodes.is_empty() {
+			self.best_solution_length = best_route_lengths.into_iter().reduce(|acc, item| acc + item).unwrap();
+			self.best_solution = best_routes;
+		}
 	}
 
-	pub fn do_iteration(&mut self) {
+	pub fn do_iteration(&mut self, deterministic: bool) {
 		self.init_ants();
-		self.move_ants();
+		self.move_ants(deterministic);
 		self.update_pheromones();
 		self.update_best_solution();
 	}
 
 	pub fn do_all_iterations(&mut self) -> Result<(), ()> {
+		self.do_iteration(true);
 		for _ in 0..self.iteration_count {
-			self.do_iteration();
+			self.do_iteration(false);
 			if self.best_solution_length == 0.0 {
 				return Err(());
 			}
