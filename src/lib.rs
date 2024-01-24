@@ -240,11 +240,10 @@ pub struct ConfigData {
 pub struct WorldState {
 	graph: Vec<GraphNode>,
 	pub ants: Vec<Ant>,
-	//pub edges: fnv::FnvHashMap<(GraphNode, GraphNode), EdgeData>, // populate at init, key is ordered tuple simulating an unordered pair, with first node having lower att number
 	pub edges: Vec<EdgeData>,
 	iteration_count: u32,
 	pheromone_evaporation_coefficient: f64,
-	pub best_solution: Vec<GraphNode>,
+	pub best_solution: Vec<Vec<GraphNode>>, // first index is vehicle id
 	pub best_solution_length: f64,
 	pub heuristic_weight: f64,
 	pub pheromone_weight: f64,
@@ -378,14 +377,27 @@ impl WorldState {
 	}
 
 	fn update_best_solution(&mut self) {
-		for ant in &self.ants {
-			if ant.current_distance < self.best_solution_length {
-				self.best_solution = ant.current_path.iter().map(|x| {
-					return self.graph[*x as usize].clone();
-				}).collect_vec();
-				self.best_solution_length = ant.current_distance;
+		// colonies have mutually exclusive routes - will never overlap nodes
+		// find ant with best route in each colony
+		let mut best_routes = Vec::with_capacity(self.vehicle_count as usize);
+		let mut best_route_lengths = Vec::with_capacity(self.vehicle_count as usize);
+
+		for vehicle_id in 0..self.vehicle_count {
+			let mut best_route = Vec::new();
+			let mut best_route_length = f64::MAX;
+			for ant in &self.ants {
+				if ant.group_id == vehicle_id && ant.current_distance < best_route_length {
+					best_route_length = ant.current_distance;
+					best_route = ant.current_path.iter().map(|x| {
+						return self.graph[*x as usize].clone();
+					}).collect_vec();
+				}
 			}
+			best_routes.push(best_route);
+			best_route_lengths.push(best_route_length);
 		}
+
+		self.best_solution_length = best_route_lengths.into_iter().reduce(|acc, item| acc + item).unwrap();
 	}
 
 	pub fn do_iteration(&mut self) {
@@ -423,7 +435,7 @@ impl WorldState {
 	pub fn solution_edges_to_graphviz(&self) -> String {
 		let mut result = String::new();
 		for pair in self.best_solution.windows(2) {
-			result.push_str(&format!("{} -> {}\n", pair[0].attraction_number, pair[1].attraction_number));
+			//result.push_str(&format!("{} -> {}\n", pair[0].attraction_number, pair[1].attraction_number)); // TODO fix
 		}
 		return result;
 	}
