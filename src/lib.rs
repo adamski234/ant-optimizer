@@ -84,15 +84,15 @@ impl Ant {
 		}
 
 		// pick the next destination
-		let next_node;
+		let mut next_node;
 		let mut cost_sum = 0.0;
 		if random_source.gen::<f64>() < self.random_choice_chance {
 			// random uniform selection
 			next_node = self.nodes_to_visit.choose(random_source).unwrap().clone();
+			while !world.visitable_nodes[self.group_id as usize].contains(&next_node.attraction_number) {
+				next_node = self.nodes_to_visit.choose(random_source).unwrap().clone();
+			}
 		} else {
-			let mut to_remove = None;
-			// create the costs table
-
 			// preliminary checks
 			let mut was_any_node_available_cargo = false;
 			let mut was_any_node_available_time = false;
@@ -101,7 +101,7 @@ impl Ant {
 			for node in &mut self.nodes_to_visit {
 				let weight_limit = world.weight_limit;
 				let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
-				if (self.time + data.length + node.service_time as f64) < node.due_time as f64 {
+				if (self.time + data.length) < node.due_time as f64 {
 					// check if there is time left
 					was_any_node_available_time = true;
 				}
@@ -129,13 +129,14 @@ impl Ant {
 
 			for node in &mut self.nodes_to_visit {
 				if !world.visitable_nodes[self.group_id as usize].contains(&node.attraction_number) {
+					eprintln!("node has been grabbed before");
 					// check if other colony did not grab the node first
 					continue;
 				}
 				let weight_limit = world.weight_limit;
 				let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
-				let begin_time = if self.time + data.length > node.ready_time as f64 { self.time + data.length } else { node.ready_time as f64 };
-				if begin_time + node.service_time as f64 > node.due_time as f64 {
+				let arrive_time = if self.time + data.length > node.ready_time as f64 { self.time + data.length } else { node.ready_time as f64 };
+				if arrive_time > node.due_time as f64 {
 					// check if there is time left
 					continue;
 				}
@@ -143,40 +144,17 @@ impl Ant {
 					// check if there is weight left
 					continue;
 				}
-				let arrive_time = if self.time + data.length > node.ready_time as f64 { self.time + data.length } else { node.ready_time as f64};
-				if data.length == 0.0 {
-					// zero distance means we jump straight there and ignore every other possibility
-					// removes a node at no cost and it is always the most optimal solution
-					// see 67 and 68 in A-n80-k10.txt
-					self.current_path.push(self.node_at.attraction_number);
-					self.node_at = node.clone();
-					to_remove = Some(self.node_at.clone());
-					self.time += arrive_time + node.service_time as f64;
-					self.cargo_so_far += node.demand;
+				// there are no zero length edges
+				let time_cost = (1.0 - (arrive_time - self.time) / (node.due_time as f64 - self.time)).powf(self.time_weight);
+				if data.pheromone_strengths[self.group_id as usize] == 0.0 {
+					let cost = data.length_cost * time_cost;
+					self.costs.push(cost);
+					cost_sum += cost;
 				} else {
-					let time_cost = (1.0 - (arrive_time - self.time) / (node.due_time as f64 - self.time)).powf(self.time_weight);
-					if data.pheromone_strengths[self.group_id as usize] == 0.0 {
-						let cost = data.length_cost * time_cost;
-						self.costs.push(cost);
-						cost_sum += cost;
-					} else {
-						let cost = data.pheromone_costs[self.group_id as usize] * data.length_cost * time_cost;
-						self.costs.push(cost);
-						cost_sum += cost;
-					}
+					let cost = data.pheromone_costs[self.group_id as usize] * data.length_cost * time_cost;
+					self.costs.push(cost);
+					cost_sum += cost;
 				}
-			}
-			if let Some(node) = to_remove {
-				self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &node).unwrap());
-				for (index, visitables) in world.visitable_nodes.iter_mut().enumerate() {
-					if index == self.group_id as usize {
-						continue;
-					}
-					if let Some(index) = visitables.iter().position(|x| *x == node.attraction_number) {
-						visitables.swap_remove(index);
-					}
-				}
-				return Ok(());
 			}
 			
 			// roulette selection
@@ -190,7 +168,7 @@ impl Ant {
 					break;
 				}
 			}
-			next_node = self.nodes_to_visit[node_index].clone();
+			next_node = self.nodes_to_visit[node_index];
 		}
 
 		let edge = world.get_edge((self.node_at.attraction_number, next_node.attraction_number));
@@ -198,15 +176,16 @@ impl Ant {
 		self.current_distance += edge.length;
 		self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &next_node).unwrap());
 		self.node_at = next_node;
-		self.time += if self.time + edge.length > next_node.ready_time as f64 { edge.length } else { next_node.ready_time as f64} + next_node.service_time as f64;
+		self.time += if self.time + edge.length > next_node.ready_time as f64 { edge.length } else { next_node.ready_time as f64 - self.time} + next_node.service_time as f64;
 		self.cargo_so_far += next_node.demand;
 
 		// remove visited node from visitable for other colonies
-		for (index, visitables) in world.visitable_nodes.iter_mut().enumerate() {
-			if index == self.group_id as usize {
+		for (target_colony, visitables) in world.visitable_nodes.iter_mut().enumerate() {
+			if target_colony == self.group_id as usize {
 				continue;
 			}
 			if let Some(index) = visitables.iter().position(|x| *x == next_node.attraction_number) {
+				//eprintln!("dropping node {} from colony {} as colony {}", next_node.attraction_number, target_colony, self.group_id);
 				visitables.swap_remove(index);
 			}
 		}
@@ -349,29 +328,35 @@ impl WorldState {
 	fn move_ants(&mut self) {
 		let mut random_source = rand::thread_rng();
 		let mut temp = self.ants.clone(); // evil clone to get around the borrow checker
-		for ant in &mut temp {
-			loop {
+		loop {
+			let mut anything_changed = false;
+			for ant in &mut temp {
 				let result = ant.move_ant(self, &mut random_source);
+				//eprintln!("after move ant is at time {}", ant.time);
 				match result {
-					Ok(()) => {}
+					Ok(()) => {
+						anything_changed = true;
+					}
 					Err(AntError::OutOfTime) => {
-						eprintln!("ant out of time in colony {}", ant.group_id);
-						break;
+						//eprintln!("ant out of time in colony {}", ant.group_id);
 					}
 					Err(AntError::CargoFull) => {
-						eprintln!("ant out of cargo space in colony {}", ant.group_id);
-						break;
+						//eprintln!("ant out of cargo space in colony {}", ant.group_id);
 					}
 					Err(AntError::AllNodesUsedByOtherColonies) => {
-						eprintln!("ant out of untaken nodes in colony {}", ant.group_id);
-						break;
+						//eprintln!("ant out of untaken nodes in colony {}", ant.group_id);
 					}
 					Err(AntError::NoNodesLeft) => {
-						eprintln!("ant out of nodes to visit in colony {}", ant.group_id);
-						break;
+						//eprintln!("ant out of nodes to visit in colony {}", ant.group_id);
 					}
 				}
 			}
+			if !anything_changed {
+				eprintln!("No change this round");
+				break;
+			}
+		}
+		for ant in &mut temp {
 			ant.current_path.push(ant.node_at.attraction_number);
 			ant.current_distance += self.get_edge((ant.current_path[ant.current_path.len() - 1].clone(), ant.node_at.attraction_number)).length;
 			ant.current_path.push(self.graph[0].attraction_number);
@@ -428,6 +413,7 @@ impl WorldState {
 		}
 
 		self.best_solution_length = best_route_lengths.into_iter().reduce(|acc, item| acc + item).unwrap();
+		self.best_solution = best_routes;
 	}
 
 	pub fn do_iteration(&mut self) {
@@ -435,9 +421,6 @@ impl WorldState {
 		self.move_ants();
 		self.update_pheromones();
 		self.update_best_solution();
-		for ant in &self.ants {
-			println!("colony {} length {}", ant.group_id, ant.current_distance);
-		}
 	}
 
 	pub fn do_all_iterations(&mut self) -> Result<(), ()> {
@@ -446,6 +429,9 @@ impl WorldState {
 			if self.best_solution_length == 0.0 {
 				return Err(());
 			}
+		}
+		for (index, path) in self.best_solution.iter().enumerate() {
+			eprintln!("colony {} with path {:?}", index, path.iter().map(|x| x.attraction_number).collect_vec());
 		}
 		return Ok(());
 	}
@@ -472,8 +458,10 @@ impl WorldState {
 
 	pub fn solution_edges_to_graphviz(&self) -> String {
 		let mut result = String::new();
-		for pair in self.best_solution.windows(2) {
-			//result.push_str(&format!("{} -> {}\n", pair[0].attraction_number, pair[1].attraction_number)); // TODO fix
+		for colony in &self.best_solution {
+			for pair in colony.windows(2) {
+				result.push_str(&format!("{} -> {}\n", pair[0].attraction_number, pair[1].attraction_number));
+			}
 		}
 		return result;
 	}

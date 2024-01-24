@@ -98,7 +98,7 @@ impl AddAssign<f64> for BatchRunData {
 // returns string that was printed before
 fn process_set_of_nodes(nodes: Vec::<ant_colony::GraphNode>, config: Config, weight_limit: u32) -> String {
 	let world_config = ant_colony::ConfigData::from(&config);
-	let vehicle_count = (nodes.len() as f64).sqrt().round() as u8 * 4; // TODO variable amount of vehicles
+	let vehicle_count = 15; //(nodes.len() as f64).sqrt().round() as u8 * 3; // TODO variable amount of vehicles
 	let mut solver = ant_colony::WorldState::new(nodes, world_config, weight_limit, vehicle_count);
 	if let Some(tries) = config.try_count {
 		let tries_per_thread = (tries as usize).div_ceil(num_cpus::get());

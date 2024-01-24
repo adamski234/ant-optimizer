@@ -77,7 +77,7 @@
 			},
 			"args": [
 				"--path", "data/c101.csv",
-				"--ant-count-per-vehicle", "2",
+				"--ant-count-per-vehicle", "1",
 				"--iterations", "1",
 				"--evaporation-coeff", "0.5",
 				"--random-choice-chance", "0",
