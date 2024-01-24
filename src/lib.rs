@@ -1,6 +1,7 @@
 #![allow(clippy::needless_return)]
 
 // TODO how do you store solutions? Update them?
+// TODO include time in cost calculation
 
 use itertools::Itertools;
 use rand::prelude::*;
@@ -10,7 +11,7 @@ pub struct GraphNode {
 	pub attraction_number: u8,
 	pub x: i32,
 	pub y: i32,
-	pub demand: u32, // cargo lost so far - no partial deliveries
+	pub demand: u32,
 	pub ready_time: u32,
 	pub due_time: u32,
 	pub service_time: u32,
@@ -48,14 +49,14 @@ enum AntError {
 #[derive(Debug, Clone)]
 pub struct Ant {
 	pub node_at: GraphNode,
-	pub current_path: Vec<u8>, // Added assumption: attraction number is always one higher than index in the original 
+	pub current_path: Vec<u8>,
 	pub current_distance: f64,
 	pub random_choice_chance: f64, // less than 1
 	nodes_to_visit: Vec<GraphNode>,
 	costs: Vec<f64>,
 	pub group_id: u8,
-	time: f64, // TODO check for early delivery and push the time if necessary
-	cargo_so_far: u32,
+	time: f64,
+	cargo_so_far: u32, // cargo lost so far - no partial deliveries
 }
 
 impl Ant {
@@ -94,7 +95,7 @@ impl Ant {
 			// preliminary checks
 			let mut was_any_node_available_cargo = false;
 			let mut was_any_node_available_time = false;
-			let mut was_any_node_available_other_colonies = false; // TODO check if move is valid with other colonies
+			let mut was_any_node_available_other_colonies = false;
 
 			for node in &mut self.nodes_to_visit {
 				let weight_limit = world.weight_limit;
@@ -126,9 +127,14 @@ impl Ant {
 			}
 
 			for node in &mut self.nodes_to_visit {
+				if world.visitable_nodes[self.group_id as usize].contains(&node.attraction_number) {
+					// check if other colony did not grab the node first
+					continue;
+				}
 				let weight_limit = world.weight_limit;
 				let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
-				if self.time + data.length + node.service_time as f64 > node.due_time as f64 {
+				let begin_time = if self.time + data.length > node.ready_time as f64 { self.time + data.length } else { node.ready_time as f64 };
+				if begin_time + node.service_time as f64 > node.due_time as f64 {
 					// check if there is time left
 					continue;
 				}
@@ -143,7 +149,7 @@ impl Ant {
 					self.current_path.push(self.node_at.attraction_number);
 					self.node_at = node.clone();
 					to_remove = Some(self.node_at.clone());
-					self.time += data.length + node.service_time as f64;
+					self.time += if self.time + data.length > node.ready_time as f64 { data.length } else { node.ready_time as f64} + node.service_time as f64;
 					self.cargo_so_far += node.demand;
 				} else {
 					if data.pheromone_strengths[self.group_id as usize] == 0.0 {
@@ -187,7 +193,7 @@ impl Ant {
 		self.current_distance += edge.length;
 		self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &next_node).unwrap());
 		self.node_at = next_node;
-		self.time += edge.length + next_node.service_time as f64;
+		self.time += if self.time + edge.length > next_node.ready_time as f64 { edge.length } else { next_node.ready_time as f64} + next_node.service_time as f64;
 		self.cargo_so_far += next_node.demand;
 		for (index, visitables) in world.visitable_nodes.iter_mut().enumerate() {
 			if index == self.group_id as usize {
