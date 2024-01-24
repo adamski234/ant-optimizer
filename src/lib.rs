@@ -50,13 +50,13 @@ pub struct Ant {
 	pub node_at: GraphNode,
 	pub current_path: Vec<u8>,
 	pub current_distance: f64,
-	pub random_choice_chance: f64, // less than 1
 	nodes_to_visit: Vec<GraphNode>,
 	costs: Vec<f64>,
 	pub group_id: u8,
 	time: f64,
 	cargo_so_far: u32, // cargo lost so far - no partial deliveries
 	time_weight: f64,
+	random_choice_chance: f64,
 }
 
 impl Ant {
@@ -65,13 +65,13 @@ impl Ant {
 			node_at: GraphNode { attraction_number: 0, x: 0, y: 0, demand: 0, ready_time: 0, due_time: 0, service_time: 0 }, // empty init, randomize later
 			current_path: Vec::with_capacity(nodes.len()),
 			current_distance: 0.0,
-			random_choice_chance,
 			costs: Vec::with_capacity(nodes.len()),
 			nodes_to_visit: nodes,
 			group_id,
 			time: 0.0,
 			cargo_so_far: 0,
 			time_weight,
+			random_choice_chance,
 		};
 	}
 	
@@ -83,81 +83,92 @@ impl Ant {
 			return Err(AntError::NoNodesLeft);
 		}
 
-		// pick the next destination
-		let mut next_node;
-		let mut cost_sum = 0.0;
-		if random_source.gen::<f64>() < self.random_choice_chance {
-			// random uniform selection
-			next_node = self.nodes_to_visit.choose(random_source).unwrap().clone();
-			while !world.visitable_nodes[self.group_id as usize].contains(&next_node.attraction_number) {
-				next_node = self.nodes_to_visit.choose(random_source).unwrap().clone();
-			}
-		} else {
-			// preliminary checks
-			let mut was_any_node_available_cargo = false;
-			let mut was_any_node_available_time = false;
-			let mut was_any_node_available_other_colonies = false;
+		// preliminary checks
+		let mut was_any_node_available_cargo = false;
+		let mut was_any_node_available_time = false;
+		let mut was_any_node_available_other_colonies = true;
 
-			for node in &mut self.nodes_to_visit {
-				let weight_limit = world.weight_limit;
-				let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
-				if (self.time + data.length) < node.due_time as f64 {
-					// check if there is time left
-					was_any_node_available_time = true;
+		for node in &mut self.nodes_to_visit {
+			let weight_limit = world.weight_limit;
+			let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
+			if (self.time + data.length) < node.due_time as f64 {
+				// check if there is time left
+				was_any_node_available_time = true;
+			}
+			if self.cargo_so_far + node.demand < weight_limit {
+				// check if there is weight left
+				was_any_node_available_cargo = true;
+			}
+			for (index, list) in world.visited_nodes.iter().enumerate() {
+				// check if other colonies grabbed the node first
+				if index == self.group_id as usize {
+					continue;
 				}
-				if self.cargo_so_far + node.demand < weight_limit {
-					// check if there is weight left
-					was_any_node_available_cargo = true;
-				}
-				if world.visitable_nodes[self.group_id as usize].contains(&node.attraction_number) {
-					// check if other colony did not grab the node first
+				if list.contains(&node.attraction_number) {
 					was_any_node_available_other_colonies = true;
 				}
-				if was_any_node_available_cargo && was_any_node_available_other_colonies && was_any_node_available_time {
-					break;
-				}
 			}
-			if !was_any_node_available_cargo {
-				return Err(AntError::CargoFull);
+			if was_any_node_available_cargo && was_any_node_available_other_colonies && was_any_node_available_time {
+				break;
 			}
-			if !was_any_node_available_time {
-				return Err(AntError::OutOfTime);
-			}
-			if !was_any_node_available_other_colonies {
-				return Err(AntError::AllNodesUsedByOtherColonies);
-			}
+		}
+		if !was_any_node_available_cargo {
+			return Err(AntError::CargoFull);
+		}
+		if !was_any_node_available_time {
+			return Err(AntError::OutOfTime);
+		}
+		if !was_any_node_available_other_colonies {
+			return Err(AntError::AllNodesUsedByOtherColonies);
+		}
 
-			for node in &mut self.nodes_to_visit {
-				if !world.visitable_nodes[self.group_id as usize].contains(&node.attraction_number) {
-					eprintln!("node has been grabbed before");
-					// check if other colony did not grab the node first
+		let mut can_visit = Vec::with_capacity(self.nodes_to_visit.len());
+		// pick the next destination
+		let next_node: GraphNode;
+		let mut cost_sum = 0.0;
+		'node_loop: for node in &mut self.nodes_to_visit {
+			for (index, list) in world.visited_nodes.iter().enumerate() {
+				// check if other colonies grabbed the node first
+				if index == self.group_id as usize {
 					continue;
 				}
-				let weight_limit = world.weight_limit;
-				let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
-				let arrive_time = if self.time + data.length > node.ready_time as f64 { self.time + data.length } else { node.ready_time as f64 };
-				if arrive_time > node.due_time as f64 {
-					// check if there is time left
-					continue;
-				}
-				if self.cargo_so_far + node.demand > weight_limit {
-					// check if there is weight left
-					continue;
-				}
-				// there are no zero length edges
-				let time_cost = (1.0 - (arrive_time - self.time) / (node.due_time as f64 - self.time)).powf(self.time_weight);
-				if data.pheromone_strengths[self.group_id as usize] == 0.0 {
-					let cost = data.length_cost * time_cost;
-					self.costs.push(cost);
-					cost_sum += cost;
-				} else {
-					let cost = data.pheromone_costs[self.group_id as usize] * data.length_cost * time_cost;
-					self.costs.push(cost);
-					cost_sum += cost;
+				if list.contains(&node.attraction_number) {
+					continue 'node_loop;
 				}
 			}
-			
-			// roulette selection
+			let weight_limit = world.weight_limit;
+			let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
+			let arrive_time = if self.time + data.length > node.ready_time as f64 { self.time + data.length } else { node.ready_time as f64 };
+			if arrive_time > node.due_time as f64 {
+				// check if there is time left
+				continue;
+			}
+			if self.cargo_so_far + node.demand > weight_limit {
+				// check if there is weight left
+				continue;
+			}
+			// there are no zero length edges
+			let time_cost = (1.0 - (arrive_time - self.time) / (node.due_time as f64 - self.time)).powf(self.time_weight);
+			if data.pheromone_strengths[self.group_id as usize] == 0.0 {
+				let cost = data.length_cost * time_cost;
+				self.costs.push(cost);
+				can_visit.push(node);
+				cost_sum += cost;
+			} else {
+				let cost = data.pheromone_costs[self.group_id as usize] * data.length_cost * time_cost;
+				self.costs.push(cost);
+				can_visit.push(node);
+				cost_sum += cost;
+			}
+		}
+
+		if self.costs.is_empty() {
+			return Err(AntError::NoNodesLeft);
+		}
+		
+
+		if random_source.gen::<f64>() < self.random_choice_chance {
+		// roulette selection
 			let number_to_match = random_source.gen::<f64>() * cost_sum;
 			let mut cost_so_far = 0.0;
 			let mut node_index = 0;
@@ -168,9 +179,10 @@ impl Ant {
 					break;
 				}
 			}
-			next_node = self.nodes_to_visit[node_index];
+			next_node = *can_visit[node_index];
+		} else {
+			next_node = **can_visit.choose(random_source).unwrap();
 		}
-
 		let edge = world.get_edge((self.node_at.attraction_number, next_node.attraction_number));
 		self.current_path.push(self.node_at.attraction_number);
 		self.current_distance += edge.length;
@@ -179,16 +191,8 @@ impl Ant {
 		self.time += if self.time + edge.length > next_node.ready_time as f64 { edge.length } else { next_node.ready_time as f64 - self.time} + next_node.service_time as f64;
 		self.cargo_so_far += next_node.demand;
 
-		// remove visited node from visitable for other colonies
-		for (target_colony, visitables) in world.visitable_nodes.iter_mut().enumerate() {
-			if target_colony == self.group_id as usize {
-				continue;
-			}
-			if let Some(index) = visitables.iter().position(|x| *x == next_node.attraction_number) {
-				//eprintln!("dropping node {} from colony {} as colony {}", next_node.attraction_number, target_colony, self.group_id);
-				visitables.swap_remove(index);
-			}
-		}
+		// add note for other colonies to know
+		world.visited_nodes[self.group_id as usize].push(next_node.attraction_number);
 
 		return Ok(());
 	}
@@ -212,11 +216,11 @@ pub struct EdgeData {
 #[derive(Debug, Clone)]
 pub struct ConfigData {
 	pub ant_count_per_vehicle: usize,
-	pub random_choice_chance: f64,
 	pub pheromone_weight: f64,
 	pub heuristic_weight: f64,
 	pub iteration_count: u32,
 	pub pheromone_evaporation_coefficient: f64,
+	pub random_choice_chance: f64,
 	pub time_weight: f64,
 }
 
@@ -234,15 +238,15 @@ pub struct WorldState {
 	pub time_weight: f64,
 	weight_limit: u32,
 	vehicle_count: u8,
-	visitable_nodes: Vec<Vec<u8>>, // group id is first index
+	visited_nodes: Vec<Vec<u8>>, // group id is first index
 }
 
 impl WorldState {
 	pub fn new(input_nodes: Vec<GraphNode>, config: ConfigData, weight_limit: u32, vehicle_count: u8) -> Self {
-		let mut visitable_nodes = Vec::with_capacity(vehicle_count as usize);
+		let mut visited_nodes = Vec::with_capacity(vehicle_count as usize);
 		for group_id in 0..vehicle_count {
-			visitable_nodes.push(input_nodes.iter().map(|x| x.attraction_number).collect_vec());
-			visitable_nodes[group_id as usize].swap_remove(0);
+			visited_nodes.push(Vec::with_capacity(input_nodes.len()));
+			visited_nodes[group_id as usize].push(0);
 		}
 		let mut result = WorldState {
 			graph: input_nodes,
@@ -257,7 +261,7 @@ impl WorldState {
 			time_weight: config.time_weight,
 			weight_limit,
 			vehicle_count,
-			visitable_nodes,
+			visited_nodes,
 		};
 		unsafe {
 			result.edges.set_len(0x1 << 16);
@@ -352,7 +356,6 @@ impl WorldState {
 				}
 			}
 			if !anything_changed {
-				eprintln!("No change this round");
 				break;
 			}
 		}
@@ -441,9 +444,9 @@ impl WorldState {
 		self.init_edges();
 		self.best_solution = Vec::new();
 		self.best_solution_length = f64::MAX;
-		for group_list in &mut self.visitable_nodes { // restart the lists of visitable nodes by each group
-			*group_list = self.graph.iter_mut().map(|x| x.attraction_number).collect_vec();
-			group_list.swap_remove(0);
+		for group_list in &mut self.visited_nodes { // restart the lists of visited nodes by each group
+			group_list.clear();
+			group_list.push(0);
 		}
 	}
 
