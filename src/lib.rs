@@ -150,6 +150,8 @@ impl Ant {
 	fn clear(&mut self) {
 		self.current_path.clear();
 		self.current_distance = 0.0;
+		self.cargo_so_far = 0;
+		self.time = 0.0;
 	}
 }
 

@@ -2,8 +2,8 @@ use std::os::unix::fs::MetadataExt;
 
 fn main() {
 	let header = "ants,iterations,evap_coeff,rand_chance,pher_weight,heur_weight,time_weight,graph_name,shortest_route,longest_route,average_route,time_for_stat_run";
-	//let gex = regex::Regex::new(r"File (.*): .*is (\d*\.\d*),.*is (\d*\.\d*)\. .*is (\d*\.\d*)").unwrap();
-	let gex = regex::Regex::new(r".*is (\d*\.\d*),.*is (\d*\.\d*)\. .*is (\d*\.\d*)").unwrap();
+	let gex = regex::Regex::new(r"File (.*): .*is (\d*\.\d*),.*is (\d*\.\d*)\. .*is (\d*\.\d*)").unwrap();
+	//let gex = regex::Regex::new(r".*is (\d*\.\d*),.*is (\d*\.\d*)\. .*is (\d*\.\d*)").unwrap();
 
 	println!("{}", header);
 
@@ -16,7 +16,7 @@ fn main() {
 		let runtime = metadata.ctime() as u64 - metadata.created().unwrap().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
 		let stat_data = std::fs::read_to_string(&stat_file).unwrap().lines().map(|line| {
 			let captures = gex.captures(line).unwrap();
-			return format!("{},{},{},{},{},{}", run_data, "r101", &captures[2], &captures[1], &captures[3], runtime);
+			return format!("{},{},{},{},{},{}", run_data, &captures[1], &captures[3], &captures[2], &captures[4], runtime);
 		}).collect::<Vec<_>>().join("\n");
 		println!("{}", stat_data);
 	}
