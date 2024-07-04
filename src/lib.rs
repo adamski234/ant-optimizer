@@ -89,28 +89,13 @@ impl Ant {
 				// random uniform selection
 				next_node_index = (0..self.nodes_to_visit.len()).choose(random_source).unwrap();// *self.nodes_to_visit.choose(random_source).unwrap();
 			} else {
-				let mut to_remove = None;
 				let mut cost_sum = 0.0;
 				// create the costs table
 				for node in &mut self.nodes_to_visit {
 					let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
-					if data.length == 0.0 {
-						// zero distance means we jump straight there and ignore every other possibility
-						// removes a node at no cost and it is always the most optimal solution
-						// see 67 and 68 in A-n80-k10.txt
-						self.current_path.push(self.node_at.attraction_number);
-						self.node_at = *node;
-						to_remove = Some(self.node_at);
-					} else {
-						let cost = data.pheromone_cost * data.length_cost;
-						unsafe { self.cost_sums.push_unchecked(cost_sum); }
-						cost_sum += cost;
-					}
-				}
-				if let Some(node) = to_remove {
-					self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &node).unwrap());
-					self.cost_sums.clear();
-					return Ok(());
+					let cost = data.pheromone_cost * data.length_cost;
+					unsafe { self.cost_sums.push_unchecked(cost_sum); }
+					cost_sum += cost;
 				}
 
 				// roulette selection
@@ -215,7 +200,7 @@ impl WorldState {
 				let to_insert = EdgeData {
 					first_node: node.clone(),
 					second_node: second_node.clone(),
-					length: length,
+					length,
 					pheromone_strength: 0.01,
 					length_cost: if length != 0.0 { length.recip().powf(self.heuristic_weight) } else { 0.0 },
 					pheromone_cost: (0.01_f64).powf(self.pheromone_weight),
