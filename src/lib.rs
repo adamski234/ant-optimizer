@@ -48,22 +48,6 @@ pub struct Ant {
 	cost_sums: ArrayVec<f64, { u8::MAX as usize }>,
 }
 
-trait Proxy<T> {
-	fn proxy_push(&mut self, item: T);
-}
-
-impl<T> Proxy<T> for Vec<T> {
-	fn proxy_push(&mut self, item: T) {
-		self.push(item);
-	}
-}
-
-impl<T, const N: usize> Proxy<T> for ArrayVec<T, N> {
-	fn proxy_push(&mut self, item: T) {
-		unsafe { self.push_unchecked(item) };
-	}
-}
-
 impl Ant {
 	fn new(random_choice_chance: f64, nodes: Vec<GraphNode>) -> Self {
 		return Self {
@@ -76,7 +60,7 @@ impl Ant {
 		};
 	}
 	
-	fn move_ant(&mut self, world: &mut WorldState, random_source: &mut ThreadRng) -> Result<(), AntError> {
+	fn move_ant(&mut self, world: &mut WorldState, random_source: &mut SmallRng) -> Result<(), AntError> {
 		// we're done
 		if self.nodes_to_visit.is_empty() {
 			return Err(AntError::CannotMove);
@@ -240,7 +224,7 @@ impl WorldState {
 
 	// moves ants until they're all done
 	fn move_ants(&mut self) {
-		let mut random_source = rand::thread_rng();
+		let mut random_source = SmallRng::from_rng(rand::thread_rng()).unwrap();
 		let mut temp = self.ants.clone(); // evil clone to get around the borrow checker
 		for ant in &mut temp {
 			while ant.move_ant(self, &mut random_source).is_ok() {
