@@ -87,7 +87,7 @@ impl Ant {
 		if self.nodes_to_visit.len() != 1 {
 			if random_source.gen::<f64>() < self.random_choice_chance {
 				// random uniform selection
-				next_node_index = (0..self.nodes_to_visit.len()).choose(random_source).unwrap();// *self.nodes_to_visit.choose(random_source).unwrap();
+				next_node_index = random_source.gen_range(0..self.nodes_to_visit.len());
 			} else {
 				let mut cost_sum = 0.0;
 				// create the costs table
@@ -100,7 +100,7 @@ impl Ant {
 
 				// roulette selection
 				let number_to_match = random_source.gen::<f64>() * cost_sum;
-				next_node_index = unsafe { self.cost_sums.iter().enumerate().find(|&(_, &item)| item > number_to_match).unwrap_unchecked().0 - 1 };
+				next_node_index = unsafe { self.cost_sums.binary_search_by(|v| v.partial_cmp(&number_to_match).unwrap_unchecked()).unwrap_err_unchecked() - 1 };
 				unsafe { self.cost_sums.set_len(0) }; // No need to drop anything - f64 doesn't impl Drop
 			}
 		}
