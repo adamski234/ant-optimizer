@@ -45,7 +45,7 @@ pub struct Ant {
 	pub current_distance: f64,
 	pub random_choice_chance: f64, // less than 1
 	nodes_to_visit: Vec<GraphNode>,
-	costs: ArrayVec<f64, { u8::MAX as usize }>,
+	cost_sums: ArrayVec<f64, { u8::MAX as usize }>,
 }
 
 trait Proxy<T> {
@@ -71,7 +71,7 @@ impl Ant {
 			current_path: ArrayVec::new_const(),
 			current_distance: 0.0,
 			random_choice_chance,
-			costs: ArrayVec::new_const(),
+			cost_sums: ArrayVec::new_const(),
 			nodes_to_visit: nodes,
 		};
 	}
@@ -84,50 +84,40 @@ impl Ant {
 
 		// pick the next destination
 		let mut next_node_index = 0usize;
-		if random_source.gen::<f64>() < self.random_choice_chance {
-			// random uniform selection
-			next_node_index = (0..self.nodes_to_visit.len()).choose(random_source).unwrap();// *self.nodes_to_visit.choose(random_source).unwrap();
-		} else {
-			let mut to_remove = None;
-			let mut cost_sum = 0.0;
-			// create the costs table
-			for node in &mut self.nodes_to_visit {
-				let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
-				if data.length == 0.0 {
-					// zero distance means we jump straight there and ignore every other possibility
-					// removes a node at no cost and it is always the most optimal solution
-					// see 67 and 68 in A-n80-k10.txt
-					self.current_path.push(self.node_at.attraction_number);
-					self.node_at = *node;
-					to_remove = Some(self.node_at);
-				} else {
-					let cost;
-					if data.pheromone_strength == 0.0 {
-						cost = data.length_cost;
+		if self.nodes_to_visit.len() != 1 {
+			if random_source.gen::<f64>() < self.random_choice_chance {
+				// random uniform selection
+				next_node_index = (0..self.nodes_to_visit.len()).choose(random_source).unwrap();// *self.nodes_to_visit.choose(random_source).unwrap();
+			} else {
+				let mut to_remove = None;
+				let mut cost_sum = 0.0;
+				// create the costs table
+				for node in &mut self.nodes_to_visit {
+					let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
+					if data.length == 0.0 {
+						// zero distance means we jump straight there and ignore every other possibility
+						// removes a node at no cost and it is always the most optimal solution
+						// see 67 and 68 in A-n80-k10.txt
+						self.current_path.push(self.node_at.attraction_number);
+						self.node_at = *node;
+						to_remove = Some(self.node_at);
 					} else {
-						cost = data.pheromone_cost * data.length_cost;
+						let cost = data.pheromone_cost * data.length_cost;
+						unsafe { self.cost_sums.push_unchecked(cost_sum); }
+						cost_sum += cost;
 					}
-					unsafe { self.costs.push_unchecked(cost); }
-					cost_sum += cost;
 				}
-			}
-			if let Some(node) = to_remove {
-				self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &node).unwrap());
-				self.costs.clear();
-				return Ok(());
-			}
-			
-			// roulette selection
-			let number_to_match = random_source.gen::<f64>() * cost_sum;
-			let mut cost_so_far = 0.0;
-			for (index, item) in self.costs.iter().enumerate() {
-				cost_so_far += item;
-				if cost_so_far > number_to_match {
-					next_node_index = index;
-					break;
+				if let Some(node) = to_remove {
+					self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &node).unwrap());
+					self.cost_sums.clear();
+					return Ok(());
 				}
+
+				// roulette selection
+				let number_to_match = random_source.gen::<f64>() * cost_sum;
+				next_node_index = unsafe { self.cost_sums.iter().enumerate().find(|&(_, &item)| item > number_to_match).unwrap_unchecked().0 - 1 };
+				unsafe { self.cost_sums.set_len(0) }; // No need to drop anything - f64 doesn't impl Drop
 			}
-			self.costs.clear();
 		}
 
 		self.current_path.push(self.node_at.attraction_number);
@@ -230,11 +220,13 @@ impl WorldState {
 					length_cost: if length != 0.0 { length.recip().powf(self.heuristic_weight) } else { 0.0 },
 					pheromone_cost: (0.01_f64).powf(self.pheromone_weight),
 				};
-				let hash;
-				if node.attraction_number > second_node.attraction_number {
-					hash = ((node.attraction_number as u16) << 8) | (second_node.attraction_number as u16);
+				let hash: u16;
+				let pair = (node.attraction_number, second_node.attraction_number);
+				if pair.0 > pair.1 {
+					hash = unsafe { std::mem::transmute(pair) };
 				} else {
-					hash = ((second_node.attraction_number as u16) << 8) | (node.attraction_number as u16);
+					let pair = (pair.1, pair.0);
+					hash = unsafe { std::mem::transmute(pair) };
 				}
 				self.edges[hash as usize] = to_insert;
 			}
@@ -251,11 +243,12 @@ impl WorldState {
 	}
 
 	fn get_edge(&mut self, pair: (u8, u8)) -> &mut EdgeData {
-		let hash;
+		let hash: u16;
 		if pair.0 > pair.1 {
-			hash = ((pair.0 as u16) << 8) | (pair.1 as u16);
+			hash = unsafe { std::mem::transmute(pair) };
 		} else {
-			hash = ((pair.1 as u16) << 8) | (pair.0 as u16);
+			let pair = (pair.1, pair.0);
+			hash = unsafe { std::mem::transmute(pair) };
 		}
 		return unsafe { self.edges.get_unchecked_mut(hash as usize) };
 	}
@@ -288,7 +281,7 @@ impl WorldState {
 			for pair in ant.current_path.windows(2) {
 				let edge = self.get_edge((pair[0].clone(), pair[1].clone()));
 				edge.pheromone_strength += ant.current_distance.recip();
-				edge.pheromone_cost = edge.pheromone_strength.powf(pheromone_weight);
+				edge.pheromone_cost = if edge.pheromone_strength == 0.0 { 1.0 } else { edge.pheromone_strength.powf(pheromone_weight) };
 			}
 		}
 	}
