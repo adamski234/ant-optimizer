@@ -12,7 +12,8 @@ rand = "0.8"
 clap = { version = "4", features = ["derive"] }
 num_cpus = "1"
 colorgrad = "0.6"
-itertools = "0.12"
+itertools = "0.13"
+arrayvec = "0.7.4"
 
 [workspace]
 members = ["stat_collector"]
@@ -20,3 +21,5 @@ members = ["stat_collector"]
 # Uncomment for profiling with cargo-flamegraph
 [profile.release]
 debug = true
+lto = "fat" # Significantly slower linking but minor perf improvements
+codegen-units = 1 # Significantly slower linking but minor perf improvements

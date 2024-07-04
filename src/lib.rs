@@ -1,14 +1,15 @@
 #![allow(clippy::needless_return)]
 
 use std::collections::HashMap;
+use arrayvec::ArrayVec;
 use itertools::Itertools;
 use rand::prelude::*;
 
-#[derive(Debug, Clone, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialOrd, Ord, serde::Deserialize, Copy)]
 pub struct GraphNode {
 	pub attraction_number: u8,
-	pub x: i32,
-	pub y: i32
+	pub x: u8, // data does not contain negative or larger than 255 coordinates
+	pub y: u8
 }
 
 impl std::hash::Hash for GraphNode {
@@ -25,7 +26,7 @@ impl std::cmp::PartialEq for GraphNode {
 
 impl GraphNode {
 	pub fn distance_to(&self, other: &GraphNode) -> f64 {
-		return (((self.x - other.x).pow(2) + (self.y - other.y).pow(2)) as f64).sqrt();
+		return (((self.x as i32 - other.x as i32).pow(2) + (self.y as i32 - other.y as i32).pow(2)) as f64).sqrt();
 	}
 
 	pub fn to_graphviz(&self) -> String {
@@ -40,41 +41,55 @@ enum AntError {
 #[derive(Debug, Clone)]
 pub struct Ant {
 	pub node_at: GraphNode,
-	pub current_path: Vec<u8>, // Added assumption: attraction number is always one higher than index in the original 
+	pub current_path: ArrayVec<u8, { u8::MAX as usize }>, // Added assumption: attraction number is always one higher than index in the original 
 	pub current_distance: f64,
 	pub random_choice_chance: f64, // less than 1
 	nodes_to_visit: Vec<GraphNode>,
-	costs: Vec<f64>,
+	costs: ArrayVec<f64, { u8::MAX as usize }>,
+}
+
+trait Proxy<T> {
+	fn proxy_push(&mut self, item: T);
+}
+
+impl<T> Proxy<T> for Vec<T> {
+	fn proxy_push(&mut self, item: T) {
+		self.push(item);
+	}
+}
+
+impl<T, const N: usize> Proxy<T> for ArrayVec<T, N> {
+	fn proxy_push(&mut self, item: T) {
+		unsafe { self.push_unchecked(item) };
+	}
 }
 
 impl Ant {
 	fn new(random_choice_chance: f64, nodes: Vec<GraphNode>) -> Self {
 		return Self {
 			node_at: GraphNode { attraction_number: 0, x: 0, y: 0 }, // empty init, randomize later
-			current_path: Vec::with_capacity(nodes.len()),
+			current_path: ArrayVec::new_const(),
 			current_distance: 0.0,
 			random_choice_chance,
-			costs: Vec::with_capacity(nodes.len()),
+			costs: ArrayVec::new_const(),
 			nodes_to_visit: nodes,
 		};
 	}
 	
 	fn move_ant(&mut self, world: &mut WorldState, random_source: &mut ThreadRng) -> Result<(), AntError> {
-		self.costs.clear();
-
 		// we're done
 		if self.nodes_to_visit.is_empty() {
 			return Err(AntError::CannotMove);
 		}
 
 		// pick the next destination
-		let next_node;
-		let mut cost_sum = 0.0;
+		let mut next_node_index = 0usize;
 		if random_source.gen::<f64>() < self.random_choice_chance {
 			// random uniform selection
-			next_node = self.nodes_to_visit.choose(random_source).unwrap().clone();
+			next_node_index = (0..self.nodes_to_visit.len()).choose(random_source).unwrap();// *self.nodes_to_visit.choose(random_source).unwrap();
 		} else {
 			let mut to_remove = None;
+			let mut cost_sum = 0.0;
 			// create the costs table
 			for node in &mut self.nodes_to_visit {
 				let data = world.get_edge((self.node_at.attraction_number, node.attraction_number));
@@ -83,42 +98,42 @@ impl Ant {
 					// removes a node at no cost and it is always the most optimal solution
 					// see 67 and 68 in A-n80-k10.txt
 					self.current_path.push(self.node_at.attraction_number);
-					self.node_at = node.clone();
-					to_remove = Some(self.node_at.clone());
+					self.node_at = *node;
+					to_remove = Some(self.node_at);
 				} else {
+					let cost;
 					if data.pheromone_strength == 0.0 {
-						let cost = data.length_cost;
-						self.costs.push(cost);
-						cost_sum += cost;
+						cost = data.length_cost;
 					} else {
-						let cost = data.pheromone_cost * data.length_cost;
-						self.costs.push(cost);
-						cost_sum += cost;
+						cost = data.pheromone_cost * data.length_cost;
 					}
+					unsafe { self.costs.push_unchecked(cost); }
+					cost_sum += cost;
 				}
 			}
 			if let Some(node) = to_remove {
 				self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &node).unwrap());
+				self.costs.clear();
 				return Ok(());
 			}
 			
 			// roulette selection
 			let number_to_match = random_source.gen::<f64>() * cost_sum;
 			let mut cost_so_far = 0.0;
-			let mut node_index = 0;
 			for (index, item) in self.costs.iter().enumerate() {
 				cost_so_far += item;
 				if cost_so_far > number_to_match {
-					node_index = index;
+					next_node_index = index;
 					break;
 				}
 			}
-			next_node = self.nodes_to_visit[node_index].clone();
+			self.costs.clear();
 		}
 
 		self.current_path.push(self.node_at.attraction_number);
+		let next_node = unsafe { *self.nodes_to_visit.get_unchecked(next_node_index) };
 		self.current_distance += world.get_edge((self.node_at.attraction_number, next_node.attraction_number)).length;
-		self.nodes_to_visit.swap_remove(self.nodes_to_visit.iter().position(|x| x == &next_node).unwrap());
+		self.nodes_to_visit.swap_remove(next_node_index);
 		self.node_at = next_node;
 
 		return Ok(());
@@ -168,7 +183,6 @@ pub struct MultipleIterationGraphviz {
 pub struct WorldState {
 	graph: Vec<GraphNode>,
 	pub ants: Vec<Ant>,
-	//pub edges: fnv::FnvHashMap<(GraphNode, GraphNode), EdgeData>, // populate at init, key is ordered tuple simulating an unordered pair, with first node having lower att number
 	pub edges: Vec<EdgeData>,
 	iteration_count: u32,
 	pheromone_evaporation_coefficient: f64,
@@ -183,7 +197,6 @@ impl WorldState {
 		let mut result = WorldState {
 			graph: input_nodes,
 			ants: Vec::with_capacity(config.ant_count),
-			//edges: fnv::FnvHashMap::with_capacity_and_hasher(attraction_count * (attraction_count - 1) / 2, Default::default()), // holds exactly as many edges as required
 			edges: Vec::with_capacity(0x1 << 16),
 			iteration_count: config.iteration_count,
 			pheromone_evaporation_coefficient: config.pheromone_evaporation_coefficient,
@@ -208,7 +221,6 @@ impl WorldState {
 	fn init_edges(&mut self) {
 		for (index, node) in self.graph.iter().enumerate() {
 			for second_node in self.graph[index + 1 ..].iter() {
-				//println!("{}, {} => {}", node.attraction_number, second_node.attraction_number, (((node.attraction_number as u16) << 8) | (second_node.attraction_number as u16)));
 				let length = node.distance_to(second_node);
 				let to_insert = EdgeData {
 					first_node: node.clone(),
@@ -245,7 +257,7 @@ impl WorldState {
 		} else {
 			hash = ((pair.1 as u16) << 8) | (pair.0 as u16);
 		}
-		return &mut self.edges[hash as usize];
+		return unsafe { self.edges.get_unchecked_mut(hash as usize) };
 	}
 
 	// moves ants until they're all done

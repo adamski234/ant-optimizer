@@ -1,4 +1,5 @@
 #![allow(clippy::needless_return)]
+#![feature(generic_arg_infer)]
 
 use std::{path::PathBuf, collections::HashMap};
 
